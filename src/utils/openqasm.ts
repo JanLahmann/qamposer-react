@@ -15,6 +15,8 @@ const GATE_TO_QASM: Record<GateType, string> = {
   X: 'x',
   Y: 'y',
   Z: 'z',
+  S: 's',
+  T: 't',
   CNOT: 'cx',
   RX: 'rx',
   RY: 'ry',
@@ -29,6 +31,8 @@ const QASM_TO_GATE: Record<string, GateType> = {
   x: 'X',
   y: 'Y',
   z: 'Z',
+  s: 'S',
+  t: 'T',
   cx: 'CNOT',
   rx: 'RX',
   ry: 'RY',
@@ -298,7 +302,7 @@ function parseGateInstruction(
   }
 
   // Single qubit gate: h q[0]
-  const singleMatch = instruction.match(/^(h|x|y|z)\s+q\[(\d+)\]$/);
+  const singleMatch = instruction.match(/^(h|x|y|z|s|t)\s+q\[(\d+)\]$/);
   if (singleMatch) {
     const gateType = QASM_TO_GATE[singleMatch[1]];
     if (gateType) {

@@ -76,6 +76,30 @@ function singleQubitMatrix(gate: SimulationGate): Matrix2x2 {
           [-1, 0],
         ],
       ];
+    case 'S':
+      // Phase gate: diag(1, i)
+      return [
+        [
+          [1, 0],
+          [0, 0],
+        ],
+        [
+          [0, 0],
+          [0, 1],
+        ],
+      ];
+    case 'T':
+      // Phase gate: diag(1, e^{i*pi/4})
+      return [
+        [
+          [1, 0],
+          [0, 0],
+        ],
+        [
+          [0, 0],
+          [h, h],
+        ],
+      ];
     case 'RX': {
       const theta = rotationAngle(gate);
       const c = Math.cos(theta / 2);
