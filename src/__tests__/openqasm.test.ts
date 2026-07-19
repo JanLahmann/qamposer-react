@@ -72,6 +72,19 @@ describe('circuitToQasm', () => {
     expect(qasm).toContain('rx(1.23) q[0];');
   });
 
+  it('emits a non-empty parameter for near-zero angles', () => {
+    // A near-zero angle must round-trip to a valid `rx(0)`, never an empty
+    // parameter list like `rx() q[0];`.
+    for (const parameter of [0, 1e-8, 2e-7, 4.9e-7]) {
+      const qasm = circuitToQasm({
+        qubits: 1,
+        gates: [{ id: '1', type: 'RX', qubit: 0, parameter, position: 0 }],
+      });
+      expect(qasm).toContain('rx(0) q[0];');
+      expect(qasm).not.toContain('rx() q[0];');
+    }
+  });
+
   it('sorts gates by position', () => {
     const circuit: Circuit = {
       qubits: 2,
