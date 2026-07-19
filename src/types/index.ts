@@ -6,7 +6,7 @@
 // Gate Types
 // ============================================================================
 
-export type GateType = 'H' | 'X' | 'Y' | 'Z' | 'CNOT' | 'RX' | 'RY' | 'RZ';
+export type GateType = 'H' | 'X' | 'Y' | 'Z' | 'S' | 'T' | 'CNOT' | 'RX' | 'RY' | 'RZ';
 
 export interface Gate {
   id: string;

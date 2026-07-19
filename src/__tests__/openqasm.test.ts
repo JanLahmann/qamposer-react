@@ -36,6 +36,20 @@ describe('circuitToQasm', () => {
     expect(qasm).toContain('x q[1];');
   });
 
+  it('converts S and T phase gates', () => {
+    const circuit: Circuit = {
+      qubits: 1,
+      gates: [
+        { id: '1', type: 'S', qubit: 0, position: 0 },
+        { id: '2', type: 'T', qubit: 0, position: 1 },
+      ],
+    };
+    const qasm = circuitToQasm(circuit);
+
+    expect(qasm).toContain('s q[0];');
+    expect(qasm).toContain('t q[0];');
+  });
+
   it('converts CNOT gate', () => {
     const circuit: Circuit = {
       qubits: 2,
@@ -131,6 +145,23 @@ rz(-pi/4) q[0];
     expect(result.circuit!.gates[0].parameter).toBeCloseTo(Math.PI / 2);
     expect(result.circuit!.gates[1].parameter).toBeCloseTo(Math.PI);
     expect(result.circuit!.gates[2].parameter).toBeCloseTo(-Math.PI / 4);
+  });
+
+  it('parses S and T phase gates', () => {
+    const qasm = `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[1];
+
+s q[0];
+t q[0];
+`;
+    const result = qasmToCircuit(qasm);
+
+    expect(result.success).toBe(true);
+    expect(result.circuit!.gates).toHaveLength(2);
+    expect(result.circuit!.gates[0].type).toBe('S');
+    expect(result.circuit!.gates[1].type).toBe('T');
   });
 
   it('reports error for missing semicolons', () => {

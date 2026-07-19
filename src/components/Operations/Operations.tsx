@@ -8,6 +8,8 @@ const GATE_DEFINITIONS: GateInfo[] = [
   { type: 'X', label: 'X', description: 'Pauli-X (NOT)', category: 'single', color: '#002d9c' },
   { type: 'Y', label: 'Y', description: 'Pauli-Y', category: 'single', color: '#9f1853' },
   { type: 'Z', label: 'Z', description: 'Pauli-Z', category: 'single', color: '#33b1ff' },
+  { type: 'S', label: 'S', description: 'Phase S (√Z)', category: 'single', color: '#33b1ff' },
+  { type: 'T', label: 'T', description: 'Phase T (√S)', category: 'single', color: '#33b1ff' },
   { type: 'RX', label: 'RX', description: 'Rotate X', category: 'rotation', color: '#9f1853' },
   { type: 'RY', label: 'RY', description: 'Rotate Y', category: 'rotation', color: '#9f1853' },
   { type: 'RZ', label: 'RZ', description: 'Rotate Z', category: 'rotation', color: '#33b1ff' },

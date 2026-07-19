@@ -71,6 +71,39 @@ describe('simulateStatevector', () => {
     expect(DEFAULT_ROTATION_ANGLE).not.toBe(Math.PI / 4);
   });
 
+  it('applies the S gate as diag(1, i)', () => {
+    // X then S: |0> -> |1> -> i|1>
+    const state = simulateStatevector(1, [
+      { type: 'X', qubit: 0, position: 0 },
+      { type: 'S', qubit: 0, position: 1 },
+    ]);
+    expect(state.re[1]).toBeCloseTo(0, 12);
+    expect(state.im[1]).toBeCloseTo(1, 12);
+    expect(probabilities(state)[1]).toBeCloseTo(1, 12);
+  });
+
+  it('applies the T gate as diag(1, e^{i*pi/4})', () => {
+    // X then T: |0> -> |1> -> e^{i*pi/4}|1>
+    const state = simulateStatevector(1, [
+      { type: 'X', qubit: 0, position: 0 },
+      { type: 'T', qubit: 0, position: 1 },
+    ]);
+    expect(state.re[1]).toBeCloseTo(Math.SQRT1_2, 12);
+    expect(state.im[1]).toBeCloseTo(Math.SQRT1_2, 12);
+    expect(probabilities(state)[1]).toBeCloseTo(1, 12);
+  });
+
+  it('composes T twice into S (both diag(1, i) on |1>)', () => {
+    // X then T then T: |0> -> |1> -> e^{i*pi/2}|1> = i|1>
+    const state = simulateStatevector(1, [
+      { type: 'X', qubit: 0, position: 0 },
+      { type: 'T', qubit: 0, position: 1 },
+      { type: 'T', qubit: 0, position: 2 },
+    ]);
+    expect(state.re[1]).toBeCloseTo(0, 12);
+    expect(state.im[1]).toBeCloseTo(1, 12);
+  });
+
   it('rejects single-qubit gates without a qubit index', () => {
     expect(() => simulateStatevector(1, [{ type: 'H', position: 0 }])).toThrow(
       'requires a qubit index'

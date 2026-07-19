@@ -12,6 +12,8 @@ const GATE_COLORS: Record<GateType, string> = {
   X: '#002d9c',
   Y: '#9f1853',
   Z: '#33b1ff',
+  S: '#33b1ff',
+  T: '#33b1ff',
   RX: '#9f1853',
   RY: '#9f1853',
   RZ: '#33b1ff',
