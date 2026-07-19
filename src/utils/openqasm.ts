@@ -125,8 +125,12 @@ function formatParameter(value: number): string {
     }
   }
 
-  // Default to decimal representation
-  return value.toFixed(6).replace(/\.?0+$/, '');
+  // Default to decimal representation, stripping trailing zeros (and any
+  // now-dangling decimal point). Guard against the strip emptying the string:
+  // an empty parameter would produce invalid QASM such as `rx() q[0];`. This
+  // also keeps output byte-identical to the Python port, which emits '0'.
+  const decimal = value.toFixed(6).replace(/\.?0+$/, '');
+  return decimal === '' ? '0' : decimal;
 }
 
 /**
