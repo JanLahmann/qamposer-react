@@ -83,9 +83,11 @@ function GateLibrary({
   const isGateDisabled = (gateType: GateType) =>
     isControlledGate(gateType) && circuit.qubits < requiredQubits(gateType);
 
+  // Both sections open by default: on touch the collapsed Multi-Qubit section
+  // cost an extra tap before the first CNOT could even be seen.
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     single: true,
-    multi: false,
+    multi: true,
   });
 
   // Shrinking the register can invalidate an already armed controlled gate.
