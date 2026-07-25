@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from 'react';
 import { QamposerContext } from './QamposerContext';
 import { circuitToQasm, qasmToCircuit, generateGateId, compactGates } from '../utils/openqasm';
+import { getGateQubits, isControlledGate } from '../utils/gates';
 import { noopAdapter } from '../adapters/noop';
 import type {
   Circuit,
@@ -225,28 +226,16 @@ export function QamposerProvider({
 
       const updatedGate = { ...targetGate, ...updates };
 
-      // Helper to get qubits occupied by a gate (including all qubits between CNOT control/target)
-      const getGateQubits = (gate: Gate): number[] => {
-        if (gate.type === 'CNOT' && gate.control !== undefined && gate.target !== undefined) {
-          const minQ = Math.min(gate.control, gate.target);
-          const maxQ = Math.max(gate.control, gate.target);
-          const qubits: number[] = [];
-          for (let q = minQ; q <= maxQ; q++) {
-            qubits.push(q);
-          }
-          return qubits;
-        }
-        return gate.qubit !== undefined ? [gate.qubit] : [];
-      };
-
-      // Check if updating CNOT control/target causes conflicts
-      const isCnotUpdate =
-        targetGate.type === 'CNOT' &&
-        (updates.control !== undefined || updates.target !== undefined);
+      // Check if updating a controlled gate's control/target causes conflicts
+      const isControlledUpdate =
+        isControlledGate(targetGate.type) &&
+        (updates.control !== undefined ||
+          updates.control2 !== undefined ||
+          updates.target !== undefined);
 
       let updatedGates: Gate[];
 
-      if (isCnotUpdate) {
+      if (isControlledUpdate) {
         const newQubits = getGateQubits(updatedGate);
         const gatePosition = updatedGate.position;
 
@@ -255,7 +244,7 @@ export function QamposerProvider({
           if (g.id === id) {
             return updatedGate;
           }
-          // Check if this gate conflicts with the updated CNOT
+          // Check if this gate conflicts with the updated controlled gate
           if (g.position === gatePosition) {
             const gateQubits = getGateQubits(g);
             const hasConflict = gateQubits.some((q) => newQubits.includes(q));
@@ -329,24 +318,25 @@ export function QamposerProvider({
       const updatedGates = circuit.gates
         .filter((gate) => {
           // Remove gates that act on the deleted qubit
-          if (gate.type === 'CNOT') {
-            return gate.control !== removedIndex && gate.target !== removedIndex;
+          if (isControlledGate(gate.type)) {
+            return (
+              gate.control !== removedIndex &&
+              gate.control2 !== removedIndex &&
+              gate.target !== removedIndex
+            );
           }
           return gate.qubit !== removedIndex;
         })
         .map((gate) => {
           // Adjust qubit indices for gates on higher-indexed qubits
-          if (gate.type === 'CNOT') {
+          if (isControlledGate(gate.type)) {
+            const shiftDown = (q: number | undefined) =>
+              q !== undefined && q > removedIndex ? q - 1 : q;
             return {
               ...gate,
-              control:
-                gate.control !== undefined && gate.control > removedIndex
-                  ? gate.control - 1
-                  : gate.control,
-              target:
-                gate.target !== undefined && gate.target > removedIndex
-                  ? gate.target - 1
-                  : gate.target,
+              control: shiftDown(gate.control),
+              control2: shiftDown(gate.control2),
+              target: shiftDown(gate.target),
             };
           }
           return {

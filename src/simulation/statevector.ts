@@ -7,7 +7,8 @@
  * Qiskit counts keys.
  */
 
-import type { Gate } from '../types';
+import type { Gate, GateType } from '../types';
+import { controlsOf, isControlledGate } from '../utils/gates';
 
 export interface StateVector {
   re: Float64Array;
@@ -172,6 +173,89 @@ function applySingleQubitGate(
   }
 }
 
+/**
+ * The 2x2 target unitary of a controlled gate — the U applied to the target
+ * when every control is |1>. CS/CT are true controlled-PHASE gates
+ * diag(1, i) / diag(1, e^{i*pi/4}), matching the `cu1(pi/2)` / `cu1(pi/4)` QASM
+ * emission; conceptually these are not the single-qubit S/T matrices even
+ * though their entries coincide.
+ */
+function controlledTargetOp(type: GateType): Matrix2x2 {
+  const h = Math.SQRT1_2;
+  switch (type) {
+    case 'CNOT':
+    case 'CCX':
+      return singleQubitMatrix({ type: 'X', position: 0 });
+    case 'CY':
+      return singleQubitMatrix({ type: 'Y', position: 0 });
+    case 'CZ':
+      return singleQubitMatrix({ type: 'Z', position: 0 });
+    case 'CH':
+      return singleQubitMatrix({ type: 'H', position: 0 });
+    case 'CS':
+      // Controlled phase: diag(1, i)
+      return [
+        [
+          [1, 0],
+          [0, 0],
+        ],
+        [
+          [0, 0],
+          [0, 1],
+        ],
+      ];
+    case 'CT':
+      // Controlled phase: diag(1, e^{i*pi/4})
+      return [
+        [
+          [1, 0],
+          [0, 0],
+        ],
+        [
+          [0, 0],
+          [h, h],
+        ],
+      ];
+    default:
+      throw new Error(`Unsupported controlled gate type: ${type}`);
+  }
+}
+
+/**
+ * Apply a 2x2 target unitary gated on all `controls` being |1>, in place.
+ * Generic over the number of controls (CY/CZ/CH/CS/CT: one; CCX: two) — basis
+ * indices where any control bit is 0 are skipped.
+ */
+function applyControlled(
+  state: StateVector,
+  controls: readonly number[],
+  matrix: Matrix2x2,
+  target: number,
+  numQubits: number
+): void {
+  const dim = 1 << numQubits;
+  const targetBit = 1 << target;
+  let controlMask = 0;
+  for (const control of controls) {
+    controlMask |= 1 << control;
+  }
+  const [[m00, m01], [m10, m11]] = matrix;
+
+  for (let i0 = 0; i0 < dim; i0++) {
+    if (i0 & targetBit) continue;
+    if ((i0 & controlMask) !== controlMask) continue;
+    const i1 = i0 | targetBit;
+    const re0 = state.re[i0];
+    const im0 = state.im[i0];
+    const re1 = state.re[i1];
+    const im1 = state.im[i1];
+    state.re[i0] = m00[0] * re0 - m00[1] * im0 + m01[0] * re1 - m01[1] * im1;
+    state.im[i0] = m00[0] * im0 + m00[1] * re0 + m01[0] * im1 + m01[1] * re1;
+    state.re[i1] = m10[0] * re0 - m10[1] * im0 + m11[0] * re1 - m11[1] * im1;
+    state.im[i1] = m10[0] * im0 + m10[1] * re0 + m11[0] * im1 + m11[1] * re1;
+  }
+}
+
 function applyCnot(state: StateVector, control: number, target: number, numQubits: number): void {
   const dim = 1 << numQubits;
   const controlBit = 1 << control;
@@ -191,21 +275,31 @@ function applyCnot(state: StateVector, control: number, target: number, numQubit
 }
 
 function validateGate(gate: SimulationGate, numQubits: number): void {
-  if (gate.type === 'CNOT') {
-    if (gate.control === undefined || gate.target === undefined) {
-      throw new Error('CNOT gate requires control and target qubits');
-    }
-    if (gate.control === gate.target) {
-      throw new Error('CNOT gate requires distinct control and target qubits');
-    }
+  if (isControlledGate(gate.type)) {
+    const needsSecondControl = gate.type === 'CCX';
     if (
-      gate.control < 0 ||
-      gate.control >= numQubits ||
-      gate.target < 0 ||
-      gate.target >= numQubits
+      gate.control === undefined ||
+      gate.target === undefined ||
+      (needsSecondControl && gate.control2 === undefined)
     ) {
       throw new Error(
-        `CNOT gate qubits (control=${gate.control}, target=${gate.target}) out of range for ${numQubits} qubit(s)`
+        needsSecondControl
+          ? 'CCX gate requires control, control2 and target qubits'
+          : `${gate.type} gate requires control and target qubits`
+      );
+    }
+    const involved = needsSecondControl
+      ? [gate.control, gate.control2!, gate.target]
+      : [gate.control, gate.target];
+    if (new Set(involved).size !== involved.length) {
+      throw new Error(`${gate.type} gate requires distinct control and target qubits`);
+    }
+    if (involved.some((q) => q < 0 || q >= numQubits)) {
+      const described = needsSecondControl
+        ? `control=${gate.control}, control2=${gate.control2}, target=${gate.target}`
+        : `control=${gate.control}, target=${gate.target}`;
+      throw new Error(
+        `${gate.type} gate qubits (${described}) out of range for ${numQubits} qubit(s)`
       );
     }
   } else {
@@ -233,7 +327,16 @@ export function simulateStatevector(numQubits: number, gates: SimulationGate[]):
   for (const gate of sortedGates) {
     validateGate(gate, numQubits);
     if (gate.type === 'CNOT') {
+      // CNOT keeps the dedicated swap path so legacy behaviour is unchanged
       applyCnot(state, gate.control!, gate.target!, numQubits);
+    } else if (isControlledGate(gate.type)) {
+      applyControlled(
+        state,
+        controlsOf(gate),
+        controlledTargetOp(gate.type),
+        gate.target!,
+        numQubits
+      );
     } else {
       applySingleQubitGate(state, singleQubitMatrix(gate), gate.qubit!, numQubits);
     }

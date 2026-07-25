@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { interactionFsm } from './interactionFsm';
+import { GATE_CYCLE_ORDER } from './constants';
 import type { InteractionState, CursorPosition, GridBounds } from './types';
 
 const bounds: GridBounds = { maxRow: 4, maxCol: 19 };
@@ -66,7 +67,7 @@ describe('interactionFsm', () => {
         { type: 'SELECT_GATE', gateType: 'CNOT' },
         bounds
       );
-      expect(result.state).toEqual({ type: 'cnot_control' });
+      expect(result.state).toEqual({ type: 'cnot_control', gateType: 'CNOT' });
       expect(result.command).toBeNull();
     });
 
@@ -133,7 +134,7 @@ describe('interactionFsm', () => {
         { type: 'SELECT_GATE', gateType: 'CNOT' },
         bounds
       );
-      expect(result.state).toEqual({ type: 'cnot_control' });
+      expect(result.state).toEqual({ type: 'cnot_control', gateType: 'CNOT' });
     });
 
     it('CANCEL returns to idle', () => {
@@ -143,7 +144,7 @@ describe('interactionFsm', () => {
   });
 
   describe('cnot_control state', () => {
-    const cnotControl: InteractionState = { type: 'cnot_control' };
+    const cnotControl: InteractionState = { type: 'cnot_control', gateType: 'CNOT' };
 
     it('ACTIVATE_CELL transitions to cnot_target with controlRow', () => {
       const result = interactionFsm(
@@ -152,7 +153,7 @@ describe('interactionFsm', () => {
         { type: 'ACTIVATE_CELL' },
         bounds
       );
-      expect(result.state).toEqual({ type: 'cnot_target', controlRow: 2 });
+      expect(result.state).toEqual({ type: 'cnot_target', gateType: 'CNOT', controlRow: 2 });
       expect(result.command).toBeNull();
     });
 
@@ -173,9 +174,9 @@ describe('interactionFsm', () => {
   });
 
   describe('cnot_target state', () => {
-    const cnotTarget: InteractionState = { type: 'cnot_target', controlRow: 1 };
+    const cnotTarget: InteractionState = { type: 'cnot_target', gateType: 'CNOT', controlRow: 1 };
 
-    it('ACTIVATE_CELL on different row emits PLACE_CNOT', () => {
+    it('ACTIVATE_CELL on different row emits PLACE_CONTROLLED', () => {
       const result = interactionFsm(
         cnotTarget,
         { row: 3, col: 5 },
@@ -184,7 +185,8 @@ describe('interactionFsm', () => {
       );
       expect(result.state).toEqual({ type: 'idle' });
       expect(result.command).toEqual({
-        type: 'PLACE_CNOT',
+        type: 'PLACE_CONTROLLED',
+        gateType: 'CNOT',
         controlRow: 1,
         targetRow: 3,
         col: 5,
@@ -214,7 +216,71 @@ describe('interactionFsm', () => {
         { type: 'SELECT_GATE', gateType: 'CNOT' },
         bounds
       );
-      expect(result.state).toEqual({ type: 'cnot_control' });
+      expect(result.state).toEqual({ type: 'cnot_control', gateType: 'CNOT' });
+    });
+  });
+
+  describe('generalized controlled-gate flow', () => {
+    const controlledTypes = ['CNOT', 'CY', 'CZ', 'CH', 'CS', 'CT'] as const;
+
+    it.each(controlledTypes)('SELECT_GATE %s enters the control step', (gateType) => {
+      const result = interactionFsm(
+        { type: 'idle' },
+        cursor,
+        { type: 'SELECT_GATE', gateType },
+        bounds
+      );
+      expect(result.state).toEqual({ type: 'cnot_control', gateType });
+    });
+
+    it.each(controlledTypes)('places %s after control then target', (gateType) => {
+      const afterControl = interactionFsm(
+        { type: 'cnot_control', gateType },
+        { row: 0, col: 2 },
+        { type: 'ACTIVATE_CELL' },
+        bounds
+      );
+      expect(afterControl.state).toEqual({ type: 'cnot_target', gateType, controlRow: 0 });
+
+      const afterTarget = interactionFsm(
+        afterControl.state,
+        { row: 2, col: 2 },
+        { type: 'ACTIVATE_CELL' },
+        bounds
+      );
+      expect(afterTarget.state).toEqual({ type: 'idle' });
+      expect(afterTarget.command).toEqual({
+        type: 'PLACE_CONTROLLED',
+        gateType,
+        controlRow: 0,
+        targetRow: 2,
+        col: 2,
+      });
+    });
+
+    it('switching from one controlled gate to another restarts the flow', () => {
+      const result = interactionFsm(
+        { type: 'cnot_target', gateType: 'CNOT', controlRow: 1 },
+        cursor,
+        { type: 'SELECT_GATE', gateType: 'CZ' },
+        bounds
+      );
+      expect(result.state).toEqual({ type: 'cnot_control', gateType: 'CZ' });
+    });
+
+    it('cycles through every controlled gate after CNOT', () => {
+      expect(GATE_CYCLE_ORDER.slice(GATE_CYCLE_ORDER.indexOf('CNOT'))).toEqual([
+        'CNOT',
+        'CY',
+        'CZ',
+        'CH',
+        'CS',
+        'CT',
+      ]);
+    });
+
+    it('leaves CCX out of the cycle order (not keyboard-placeable)', () => {
+      expect(GATE_CYCLE_ORDER).not.toContain('CCX');
     });
   });
 
@@ -222,8 +288,8 @@ describe('interactionFsm', () => {
     const states: InteractionState[] = [
       { type: 'idle' },
       { type: 'placing', gateType: 'H' },
-      { type: 'cnot_control' },
-      { type: 'cnot_target', controlRow: 0 },
+      { type: 'cnot_control', gateType: 'CNOT' },
+      { type: 'cnot_target', gateType: 'CNOT', controlRow: 0 },
     ];
 
     it('DELETE_AT emits DELETE_GATE from any state', () => {
@@ -280,8 +346,8 @@ describe('interactionFsm', () => {
         { type: 'CYCLE_GATE', direction: -1 },
         bounds
       );
-      // CNOT is last in cycle order, so should transition to cnot_control
-      expect(result.state).toEqual({ type: 'cnot_control' });
+      // CT is last in cycle order, so should transition to cnot_control
+      expect(result.state).toEqual({ type: 'cnot_control', gateType: 'CT' });
     });
 
     it('cycles backward from idle selects last gate', () => {
@@ -291,8 +357,8 @@ describe('interactionFsm', () => {
         { type: 'CYCLE_GATE', direction: -1 },
         bounds
       );
-      // Last in GATE_CYCLE_ORDER is CNOT
-      expect(result.state).toEqual({ type: 'cnot_control' });
+      // Last in GATE_CYCLE_ORDER is CT
+      expect(result.state).toEqual({ type: 'cnot_control', gateType: 'CT' });
     });
   });
 });

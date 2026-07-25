@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQamposer } from '../../hooks/useQamposer';
+import { isControlledGate } from '../../utils/gates';
 import type { GateType, Gate, GateInfo } from '../../types';
 import './Operations.scss';
 
@@ -20,7 +21,28 @@ const GATE_DEFINITIONS: GateInfo[] = [
     category: 'multi',
     color: '#002d9c',
   },
+  { type: 'CY', label: 'CY', description: 'Controlled-Y', category: 'multi', color: '#9f1853' },
+  { type: 'CZ', label: 'CZ', description: 'Controlled-Z', category: 'multi', color: '#33b1ff' },
+  { type: 'CH', label: 'CH', description: 'Controlled-H', category: 'multi', color: '#fa4d56' },
+  { type: 'CS', label: 'CS', description: 'Controlled-S', category: 'multi', color: '#33b1ff' },
+  { type: 'CT', label: 'CT', description: 'Controlled-T', category: 'multi', color: '#33b1ff' },
+  {
+    type: 'CCX',
+    label: 'CCX',
+    description: 'Toffoli (CCX)',
+    category: 'multi',
+    color: '#002d9c',
+  },
 ];
+
+/** Base letter drawn in the target of a boxed controlled gate's palette icon. */
+const CONTROLLED_ICON_LABELS: Partial<Record<GateType, string>> = {
+  CY: 'Y',
+  CZ: 'Z',
+  CH: 'H',
+  CS: 'S',
+  CT: 'T',
+};
 
 export interface OperationsProps {
   /** Additional CSS class */
@@ -47,7 +69,11 @@ export function Operations({ className = '' }: OperationsProps = {}) {
 // GateLibrary sub-component
 function GateLibrary({ className = '' }: { className?: string }) {
   const { circuit } = useQamposer();
-  const canUseCnot = circuit.qubits >= 2;
+
+  /** Qubits a controlled gate needs: 3 for CCX (two controls), 2 otherwise. */
+  const requiredQubits = (gateType: GateType) => (gateType === 'CCX' ? 3 : 2);
+  const isGateDisabled = (gateType: GateType) =>
+    isControlledGate(gateType) && circuit.qubits < requiredQubits(gateType);
 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     single: true,
@@ -55,8 +81,8 @@ function GateLibrary({ className = '' }: { className?: string }) {
   });
 
   const handleDragStart = (event: React.DragEvent, gateType: GateType) => {
-    // Prevent CNOT drag when only 1 qubit
-    if (gateType === 'CNOT' && !canUseCnot) {
+    // Prevent dragging a controlled gate onto a register that is too small
+    if (isGateDisabled(gateType)) {
       event.preventDefault();
       return;
     }
@@ -73,30 +99,21 @@ function GateLibrary({ className = '' }: { className?: string }) {
   };
 
   const renderGate = (gate: GateInfo) => {
-    if (gate.type === 'CNOT') {
-      const isDisabled = !canUseCnot;
+    if (isControlledGate(gate.type)) {
+      const isDisabled = isGateDisabled(gate.type);
       return (
         <div
           key={gate.type}
           className={`operations__gate operations__gate--cnot ${isDisabled ? 'operations__gate--disabled' : ''}`}
           draggable={!isDisabled}
           onDragStart={(e) => handleDragStart(e, gate.type)}
-          title={isDisabled ? 'CNOT requires at least 2 qubits' : gate.description}
+          title={
+            isDisabled
+              ? `${gate.type} requires at least ${requiredQubits(gate.type)} qubits`
+              : gate.description
+          }
         >
-          <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" width="32" height="32">
-            <rect x="0" y="0" width="32" height="32" fill="#002d9c" rx="4" />
-            <circle cx="16" cy="8" r="2" fill="white" />
-            <circle cx="16" cy="20.667" r="5.333" stroke="white" fill="none" strokeWidth="1.25" />
-            <line
-              x1="10.667"
-              x2="21.333"
-              y1="20.667"
-              y2="20.667"
-              stroke="white"
-              strokeWidth="1.25"
-            />
-            <line x1="16" x2="16" y1="6" y2="26" stroke="white" strokeWidth="1.25" />
-          </svg>
+          <ControlledGateIcon type={gate.type} color={gate.color} />
         </div>
       );
     }
@@ -151,6 +168,56 @@ function GateLibrary({ className = '' }: { className?: string }) {
   );
 }
 
+/**
+ * Palette icon for a controlled gate: control dot(s), a vertical line and the
+ * target — the ⊕ circle for CNOT/CCX, a boxed base letter for CY/CZ/CH/CS/CT.
+ */
+function ControlledGateIcon({ type, color }: { type: GateType; color: string }) {
+  const label = CONTROLLED_ICON_LABELS[type];
+
+  if (type === 'CCX') {
+    return (
+      <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" width="32" height="32">
+        <rect x="0" y="0" width="32" height="32" fill={color} rx="4" />
+        <line x1="16" x2="16" y1="5" y2="28" stroke="white" strokeWidth="1.25" />
+        <circle cx="16" cy="6" r="2" fill="white" />
+        <circle cx="16" cy="13" r="2" fill="white" />
+        <circle cx="16" cy="23" r="4.75" stroke="white" fill="none" strokeWidth="1.25" />
+        <line x1="11.25" x2="20.75" y1="23" y2="23" stroke="white" strokeWidth="1.25" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" width="32" height="32">
+      <rect x="0" y="0" width="32" height="32" fill={color} rx="4" />
+      <circle cx="16" cy="8" r="2" fill="white" />
+      <line x1="16" x2="16" y1="6" y2="26" stroke="white" strokeWidth="1.25" />
+      {label ? (
+        <>
+          <rect x="9.667" y="14.333" width="12.667" height="12.667" fill="white" rx="2" />
+          <text
+            x="16"
+            y="20.667"
+            fill={color}
+            fontSize="9"
+            fontWeight="600"
+            textAnchor="middle"
+            dominantBaseline="central"
+          >
+            {label}
+          </text>
+        </>
+      ) : (
+        <>
+          <circle cx="16" cy="20.667" r="5.333" stroke="white" fill="none" strokeWidth="1.25" />
+          <line x1="10.667" x2="21.333" y1="20.667" y2="20.667" stroke="white" strokeWidth="1.25" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 // GateEditor sub-component
 interface GateEditorProps {
   gate: Gate;
@@ -166,8 +233,9 @@ function GateEditor({ gate, onUpdate, onClose, className = '' }: GateEditorProps
   // Rotation gate state
   const [parameterValue, setParameterValue] = useState('');
 
-  // CNOT gate state
+  // Controlled gate state
   const [controlQubit, setControlQubit] = useState(gate.control ?? 0);
+  const [control2Qubit, setControl2Qubit] = useState(gate.control2 ?? 1);
   const [targetQubit, setTargetQubit] = useState(gate.target ?? 1);
 
   // Initialize rotation parameter
@@ -189,20 +257,27 @@ function GateEditor({ gate, onUpdate, onClose, className = '' }: GateEditorProps
     }
   }, [gate.parameter]);
 
-  // Initialize CNOT qubits
+  // Initialize controlled-gate qubits
   useEffect(() => {
-    if (gate.type === 'CNOT') {
+    if (isControlledGate(gate.type)) {
       setControlQubit(gate.control ?? 0);
+      setControl2Qubit(gate.control2 ?? 1);
       setTargetQubit(gate.target ?? 1);
     }
-  }, [gate.type, gate.control, gate.target]);
+  }, [gate.type, gate.control, gate.control2, gate.target]);
 
   const isRotationGate = ['RX', 'RY', 'RZ'].includes(gate.type);
-  const isCnotGate = gate.type === 'CNOT';
+  const isControlledGateType = isControlledGate(gate.type);
+  const hasSecondControl = gate.type === 'CCX';
 
-  if (!isRotationGate && !isCnotGate) {
+  if (!isRotationGate && !isControlledGateType) {
     return null;
   }
+
+  const involvedQubits = hasSecondControl
+    ? [controlQubit, control2Qubit, targetQubit]
+    : [controlQubit, targetQubit];
+  const hasDuplicateQubits = new Set(involvedQubits).size !== involvedQubits.length;
 
   const handleRotationSave = () => {
     let radians = 0;
@@ -226,13 +301,21 @@ function GateEditor({ gate, onUpdate, onClose, className = '' }: GateEditorProps
     }
   };
 
-  const handleCnotSave = () => {
-    if (controlQubit !== targetQubit) {
-      onUpdate(gate.id, { control: controlQubit, target: targetQubit });
+  const handleControlledSave = () => {
+    if (!hasDuplicateQubits) {
+      onUpdate(gate.id, {
+        control: controlQubit,
+        target: targetQubit,
+        ...(hasSecondControl ? { control2: control2Qubit } : {}),
+      });
     }
   };
 
   const qubitOptions = Array.from({ length: numQubits }, (_, i) => i);
+
+  /** Lowest qubit index not already used by another role of the same gate. */
+  const firstFreeQubit = (taken: number[]) =>
+    qubitOptions.find((q) => !taken.includes(q)) ?? taken[0];
 
   return (
     <div className={`operations operations--editor ${className}`.trim()}>
@@ -263,7 +346,7 @@ function GateEditor({ gate, onUpdate, onClose, className = '' }: GateEditorProps
           </div>
         )}
 
-        {isCnotGate && (
+        {isControlledGateType && (
           <>
             <div className="operations__field">
               <label htmlFor="control-select">Control qubit</label>
@@ -274,9 +357,14 @@ function GateEditor({ gate, onUpdate, onClose, className = '' }: GateEditorProps
                 onChange={(e) => {
                   const newControl = parseInt(e.target.value, 10);
                   setControlQubit(newControl);
-                  // Auto-adjust target if same as control
+                  // Auto-adjust the other roles if they collide with the control
                   if (newControl === targetQubit) {
-                    setTargetQubit(newControl === 0 ? 1 : 0);
+                    setTargetQubit(
+                      firstFreeQubit(hasSecondControl ? [newControl, control2Qubit] : [newControl])
+                    );
+                  }
+                  if (hasSecondControl && newControl === control2Qubit) {
+                    setControl2Qubit(firstFreeQubit([newControl, targetQubit]));
                   }
                 }}
               >
@@ -288,6 +376,34 @@ function GateEditor({ gate, onUpdate, onClose, className = '' }: GateEditorProps
               </select>
             </div>
 
+            {hasSecondControl && (
+              <div className="operations__field">
+                <label htmlFor="control2-select">Second control</label>
+                <select
+                  id="control2-select"
+                  className="operations__select"
+                  value={control2Qubit}
+                  onChange={(e) => {
+                    const newControl2 = parseInt(e.target.value, 10);
+                    setControl2Qubit(newControl2);
+                    // Auto-adjust the other roles if they collide with it
+                    if (newControl2 === controlQubit) {
+                      setControlQubit(firstFreeQubit([newControl2, targetQubit]));
+                    }
+                    if (newControl2 === targetQubit) {
+                      setTargetQubit(firstFreeQubit([newControl2, controlQubit]));
+                    }
+                  }}
+                >
+                  {qubitOptions.map((q) => (
+                    <option key={q} value={q}>
+                      q[{q}]
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="operations__field">
               <label htmlFor="target-select">Target qubit</label>
               <select
@@ -297,9 +413,14 @@ function GateEditor({ gate, onUpdate, onClose, className = '' }: GateEditorProps
                 onChange={(e) => {
                   const newTarget = parseInt(e.target.value, 10);
                   setTargetQubit(newTarget);
-                  // Auto-adjust control if same as target
+                  // Auto-adjust the controls if they collide with the target
                   if (newTarget === controlQubit) {
-                    setControlQubit(newTarget === 0 ? 1 : 0);
+                    setControlQubit(
+                      firstFreeQubit(hasSecondControl ? [newTarget, control2Qubit] : [newTarget])
+                    );
+                  }
+                  if (hasSecondControl && newTarget === control2Qubit) {
+                    setControl2Qubit(firstFreeQubit([newTarget, controlQubit]));
                   }
                 }}
               >
@@ -313,14 +434,18 @@ function GateEditor({ gate, onUpdate, onClose, className = '' }: GateEditorProps
 
             <button
               className="operations__apply-btn"
-              onClick={handleCnotSave}
-              disabled={controlQubit === targetQubit}
+              onClick={handleControlledSave}
+              disabled={hasDuplicateQubits}
             >
               Apply
             </button>
 
-            {controlQubit === targetQubit && (
-              <p className="operations__error">Control and target must be different qubits</p>
+            {hasDuplicateQubits && (
+              <p className="operations__error">
+                {hasSecondControl
+                  ? 'Controls and target must be different qubits'
+                  : 'Control and target must be different qubits'}
+              </p>
             )}
           </>
         )}

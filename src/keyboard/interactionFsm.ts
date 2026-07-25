@@ -1,4 +1,6 @@
 import { GATE_CYCLE_ORDER } from './constants';
+import { isTwoQubitControlledGate } from '../utils/gates';
+import type { GateType } from '../types';
 import type {
   InteractionState,
   InteractionAction,
@@ -89,14 +91,7 @@ function idleTransition(
   action: InteractionAction
 ): FsmResult {
   if (action.type === 'SELECT_GATE') {
-    if (action.gateType === 'CNOT') {
-      return { state: { type: 'cnot_control' }, cursor, command: null };
-    }
-    return {
-      state: { type: 'placing', gateType: action.gateType },
-      cursor,
-      command: null,
-    };
+    return { state: selectedGateState(action.gateType), cursor, command: null };
   }
 
   // ACTIVATE_CELL in idle does nothing
@@ -110,14 +105,7 @@ function placingTransition(
   bounds: GridBounds
 ): FsmResult {
   if (action.type === 'SELECT_GATE') {
-    if (action.gateType === 'CNOT') {
-      return { state: { type: 'cnot_control' }, cursor, command: null };
-    }
-    return {
-      state: { type: 'placing', gateType: action.gateType },
-      cursor,
-      command: null,
-    };
+    return { state: selectedGateState(action.gateType), cursor, command: null };
   }
 
   if (action.type === 'ACTIVATE_CELL') {
@@ -141,31 +129,24 @@ function placingTransition(
 }
 
 function cnotControlTransition(
-  _state: InteractionState,
+  state: Extract<InteractionState, { type: 'cnot_control' }>,
   cursor: CursorPosition,
   action: InteractionAction
 ): FsmResult {
   if (action.type === 'SELECT_GATE') {
-    if (action.gateType === 'CNOT') {
-      // Already in CNOT mode, ignore
-      return { state: { type: 'cnot_control' }, cursor, command: null };
-    }
-    return {
-      state: { type: 'placing', gateType: action.gateType },
-      cursor,
-      command: null,
-    };
+    // Selecting another controlled gate re-equips it and restarts the flow
+    return { state: selectedGateState(action.gateType), cursor, command: null };
   }
 
   if (action.type === 'ACTIVATE_CELL') {
     return {
-      state: { type: 'cnot_target', controlRow: cursor.row },
+      state: { type: 'cnot_target', gateType: state.gateType, controlRow: cursor.row },
       cursor,
       command: null,
     };
   }
 
-  return { state: { type: 'cnot_control' }, cursor, command: null };
+  return { state, cursor, command: null };
 }
 
 function cnotTargetTransition(
@@ -174,15 +155,8 @@ function cnotTargetTransition(
   action: InteractionAction
 ): FsmResult {
   if (action.type === 'SELECT_GATE') {
-    if (action.gateType === 'CNOT') {
-      // Restart CNOT flow
-      return { state: { type: 'cnot_control' }, cursor, command: null };
-    }
-    return {
-      state: { type: 'placing', gateType: action.gateType },
-      cursor,
-      command: null,
-    };
+    // Selecting another controlled gate re-equips it and restarts the flow
+    return { state: selectedGateState(action.gateType), cursor, command: null };
   }
 
   if (action.type === 'ACTIVATE_CELL') {
@@ -191,7 +165,8 @@ function cnotTargetTransition(
       return { state, cursor, command: null };
     }
     const command: CircuitCommand = {
-      type: 'PLACE_CNOT',
+      type: 'PLACE_CONTROLLED',
+      gateType: state.gateType,
       controlRow: state.controlRow,
       targetRow: cursor.row,
       col: cursor.col,
@@ -203,6 +178,16 @@ function cnotTargetTransition(
 }
 
 // --- Helpers ---
+
+/**
+ * State entered when a gate is equipped: controlled gates start the two-step
+ * control-then-target flow, everything else goes straight to `placing`.
+ */
+function selectedGateState(gateType: GateType): InteractionState {
+  return isTwoQubitControlledGate(gateType)
+    ? { type: 'cnot_control', gateType }
+    : { type: 'placing', gateType };
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));

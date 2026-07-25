@@ -307,16 +307,26 @@ if (result.success) {
 
 ## Supported Gates
 
-| Gate | Description            | Parameters             |
-| ---- | ---------------------- | ---------------------- |
-| H    | Hadamard               | -                      |
-| X    | Pauli-X (NOT)          | -                      |
-| Y    | Pauli-Y                | -                      |
-| Z    | Pauli-Z                | -                      |
-| RX   | Rotation around X-axis | angle (radians)        |
-| RY   | Rotation around Y-axis | angle (radians)        |
-| RZ   | Rotation around Z-axis | angle (radians)        |
-| CNOT | Controlled-NOT         | control, target qubits |
+| Gate | Description            | Parameters                       |
+| ---- | ---------------------- | -------------------------------- |
+| H    | Hadamard               | -                                |
+| X    | Pauli-X (NOT)          | -                                |
+| Y    | Pauli-Y                | -                                |
+| Z    | Pauli-Z                | -                                |
+| RX   | Rotation around X-axis | angle (radians)                  |
+| RY   | Rotation around Y-axis | angle (radians)                  |
+| RZ   | Rotation around Z-axis | angle (radians)                  |
+| CNOT | Controlled-NOT         | control, target qubits           |
+| CY   | Controlled-Y           | control, target qubits           |
+| CZ   | Controlled-Z           | control, target qubits           |
+| CH   | Controlled-H           | control, target qubits           |
+| CS   | Controlled-S           | control, target qubits           |
+| CT   | Controlled-T           | control, target qubits           |
+| CCX  | Toffoli (CCX)          | control, control2, target qubits |
+
+Controlled gates are emitted as their `qelib1.inc` instructions (`cx`, `cy`, `cz`,
+`ch`, `ccx`); `CS` and `CT` have no dedicated name and use `cu1(pi/2)` and
+`cu1(pi/4)`.
 
 ## Theming
 

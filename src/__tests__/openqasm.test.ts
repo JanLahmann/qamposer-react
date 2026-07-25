@@ -6,7 +6,7 @@ import {
   createDefaultCircuit,
   validateQasm,
 } from '../utils/openqasm';
-import type { Circuit, Gate } from '../types';
+import type { Circuit, Gate, GateType } from '../types';
 
 // ============================================================================
 // circuitToQasm
@@ -262,6 +262,160 @@ describe('roundtrip conversion', () => {
     const originalTypes = original.gates.map((g) => g.type).sort();
     const parsedTypes = result.circuit!.gates.map((g) => g.type).sort();
     expect(parsedTypes).toEqual(originalTypes);
+  });
+});
+
+// ============================================================================
+// Controlled gates: CY, CZ, CH, CS, CT, CCX
+// ============================================================================
+
+describe('controlled gates', () => {
+  const controlled = (type: GateType, control: number, target: number): Gate => ({
+    id: '1',
+    type,
+    control,
+    target,
+    position: 0,
+  });
+
+  const withHeader = (...instructions: string[]) =>
+    ['OPENQASM 2.0;', 'include "qelib1.inc";', '', 'qreg q[3];', 'creg c[3];', '', ...instructions]
+      .join('\n')
+      .concat('\n');
+
+  it('emits the qelib1 names for CY, CZ, CH and CCX', () => {
+    const circuit: Circuit = {
+      qubits: 3,
+      gates: [
+        { id: '1', type: 'CY', control: 0, target: 1, position: 0 },
+        { id: '2', type: 'CZ', control: 0, target: 1, position: 1 },
+        { id: '3', type: 'CH', control: 0, target: 1, position: 2 },
+        { id: '4', type: 'CCX', control: 0, control2: 1, target: 2, position: 3 },
+      ],
+    };
+    const qasm = circuitToQasm(circuit);
+
+    expect(qasm).toContain('cy q[0], q[1];');
+    expect(qasm).toContain('cz q[0], q[1];');
+    expect(qasm).toContain('ch q[0], q[1];');
+    expect(qasm).toContain('ccx q[0], q[1], q[2];');
+  });
+
+  it('emits CS and CT as cu1 phase gates', () => {
+    const circuit: Circuit = {
+      qubits: 2,
+      gates: [controlled('CS', 0, 1), { ...controlled('CT', 0, 1), id: '2', position: 1 }],
+    };
+    const qasm = circuitToQasm(circuit);
+
+    expect(qasm).toContain('cu1(pi/2) q[0], q[1];');
+    expect(qasm).toContain('cu1(pi/4) q[0], q[1];');
+  });
+
+  it('matches the golden ch and ccx fixtures byte for byte', () => {
+    expect(circuitToQasm({ qubits: 5, gates: [controlled('CH', 0, 1)] })).toBe(
+      `OPENQASM 2.0;
+include "qelib1.inc";
+
+qreg q[5];
+creg c[5];
+
+ch q[0], q[1];
+`
+    );
+    expect(
+      circuitToQasm({
+        qubits: 5,
+        gates: [{ id: '1', type: 'CCX', control: 0, control2: 1, target: 2, position: 0 }],
+      })
+    ).toBe(
+      `OPENQASM 2.0;
+include "qelib1.inc";
+
+qreg q[5];
+creg c[5];
+
+ccx q[0], q[1], q[2];
+`
+    );
+  });
+
+  it('parses cy, cz and ch back into control/target', () => {
+    const result = qasmToCircuit(withHeader('cy q[0], q[1];', 'cz q[1], q[2];', 'ch q[2], q[0];'));
+
+    expect(result.success).toBe(true);
+    expect(result.circuit!.gates.map((g) => g.type)).toEqual(['CY', 'CZ', 'CH']);
+    expect(result.circuit!.gates[0]).toMatchObject({ control: 0, target: 1 });
+    expect(result.circuit!.gates[1]).toMatchObject({ control: 1, target: 2 });
+    expect(result.circuit!.gates[2]).toMatchObject({ control: 2, target: 0 });
+  });
+
+  it('parses ccx into control, control2 and target', () => {
+    const result = qasmToCircuit(withHeader('ccx q[0], q[1], q[2];'));
+
+    expect(result.success).toBe(true);
+    expect(result.circuit!.gates).toHaveLength(1);
+    expect(result.circuit!.gates[0]).toMatchObject({
+      type: 'CCX',
+      control: 0,
+      control2: 1,
+      target: 2,
+    });
+  });
+
+  it('parses cu1(pi/2) as CS and cu1(pi/4) as CT', () => {
+    const result = qasmToCircuit(withHeader('cu1(pi/2) q[0], q[1];', 'cu1(pi/4) q[0], q[1];'));
+
+    expect(result.success).toBe(true);
+    expect(result.circuit!.gates.map((g) => g.type)).toEqual(['CS', 'CT']);
+  });
+
+  it('rejects a cu1 angle that is neither pi/2 nor pi/4', () => {
+    const result = qasmToCircuit(withHeader('cu1(pi/3) q[0], q[1];'));
+
+    expect(result.success).toBe(false);
+    expect(result.errors[0]).toContain('unsupported cu1 angle');
+  });
+
+  it('rejects controlled gates acting twice on the same qubit', () => {
+    for (const instruction of ['cz q[1], q[1];', 'ccx q[0], q[1], q[1];']) {
+      const result = qasmToCircuit(withHeader(instruction));
+      expect(result.success).toBe(false);
+      expect(result.errors[0]).toMatch(/requires distinct qubits/);
+    }
+  });
+
+  it('rejects controlled gates outside the register', () => {
+    const result = qasmToCircuit(withHeader('ccx q[0], q[1], q[7];'));
+
+    expect(result.success).toBe(false);
+    expect(result.errors[0]).toContain('exceeds defined qubits');
+  });
+
+  it('round-trips every controlled gate', () => {
+    const original: Circuit = {
+      qubits: 3,
+      gates: [
+        { id: '1', type: 'CNOT', control: 0, target: 1, position: 0 },
+        { id: '2', type: 'CY', control: 0, target: 1, position: 1 },
+        { id: '3', type: 'CZ', control: 0, target: 1, position: 2 },
+        { id: '4', type: 'CH', control: 0, target: 1, position: 3 },
+        { id: '5', type: 'CS', control: 0, target: 1, position: 4 },
+        { id: '6', type: 'CT', control: 0, target: 1, position: 5 },
+        { id: '7', type: 'CCX', control: 0, control2: 1, target: 2, position: 6 },
+      ],
+    };
+
+    const result = qasmToCircuit(circuitToQasm(original));
+
+    expect(result.success).toBe(true);
+    expect(result.circuit!.gates.map((g) => g.type)).toEqual(original.gates.map((g) => g.type));
+    result.circuit!.gates.forEach((gate, index) => {
+      expect(gate.control).toBe(original.gates[index].control);
+      expect(gate.control2).toBe(original.gates[index].control2);
+      expect(gate.target).toBe(original.gates[index].target);
+      expect(gate.qubit).toBeUndefined();
+    });
   });
 });
 
