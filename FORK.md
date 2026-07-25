@@ -33,6 +33,11 @@ branch simply carries them until they land upstream.
 - **`feat/palette-filter`** *(stacked on `feat/controlled-gates`)* —
   `gateTypes` prop on `Operations`/presets to restrict the visible palette
   (Entangible's golf mode unlocks gates round by round).
+- **`feat/touch-placement`** *(stacked on `feat/palette-filter`)* — tap-to-place
+  for touch devices (iOS drag needs an unusable long-press): tap a palette tile
+  to arm, tap a wire to place; controlled gates collect control→target taps
+  (CCX: three), with a pending indicator + hint line. Plus 44px coarse-pointer
+  touch targets for tiles and the gate toolbar. Drag unchanged.
 
 When an upstream release includes these, the corresponding merges can be dropped
 and `entangible` re-based onto the new upstream `main`.
