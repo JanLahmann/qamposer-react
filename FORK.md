@@ -30,6 +30,9 @@ branch simply carries them until they land upstream.
   editor, generic control-mask simulation, QASM `cy`/`cz`/`ch`/`ccx` +
   `cu1(pi/2)`/`cu1(pi/4)` for CS/CT. The JSON schema and QASM text match what
   Entangible's vision pipeline already emits (task #51 there).
+- **`feat/palette-filter`** *(stacked on `feat/controlled-gates`)* —
+  `gateTypes` prop on `Operations`/presets to restrict the visible palette
+  (Entangible's golf mode unlocks gates round by round).
 
 When an upstream release includes these, the corresponding merges can be dropped
 and `entangible` re-based onto the new upstream `main`.
