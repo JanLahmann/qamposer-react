@@ -4,6 +4,7 @@ import { useInputSource } from './useInputSource';
 import { useKeyRepeat } from './useKeyRepeat';
 import { useUndoRedo } from './useUndoRedo';
 import { compactGates, generateGateId } from '../utils/openqasm';
+import { getGateQubits, isControlledGate } from '../utils/gates';
 import type { Circuit, Gate } from '../types';
 import type {
   CursorPosition,
@@ -100,15 +101,8 @@ export function useCircuitKeyboard({
             if (g.qubit === command.row && g.position >= command.col) {
               return { ...g, position: g.position + 1 };
             }
-            if (
-              g.type === 'CNOT' &&
-              g.control !== undefined &&
-              g.target !== undefined &&
-              g.position >= command.col
-            ) {
-              const minQ = Math.min(g.control, g.target);
-              const maxQ = Math.max(g.control, g.target);
-              if (command.row >= minQ && command.row <= maxQ) {
+            if (isControlledGate(g.type) && g.position >= command.col) {
+              if (getGateQubits(g).includes(command.row)) {
                 return { ...g, position: g.position + 1 };
               }
             }
@@ -119,10 +113,10 @@ export function useCircuitKeyboard({
           break;
         }
 
-        case 'PLACE_CNOT': {
+        case 'PLACE_CONTROLLED': {
           const newGate: Gate = {
             id: generateGateId(),
-            type: 'CNOT',
+            type: command.gateType,
             control: command.controlRow,
             target: command.targetRow,
             position: command.col,
@@ -214,25 +208,12 @@ export function useCircuitKeyboard({
 
 // --- Helpers ---
 
-function getGateQubits(gate: Gate): number[] {
-  if (gate.type === 'CNOT' && gate.control !== undefined && gate.target !== undefined) {
-    const minQ = Math.min(gate.control, gate.target);
-    const maxQ = Math.max(gate.control, gate.target);
-    const qubits: number[] = [];
-    for (let q = minQ; q <= maxQ; q++) {
-      qubits.push(q);
-    }
-    return qubits;
-  }
-  return gate.qubit !== undefined ? [gate.qubit] : [];
-}
-
 function findGateAt(gates: Gate[], row: number, col: number): Gate | null {
   return (
     gates.find((g) => {
       if (g.position !== col) return false;
-      if (g.type === 'CNOT') {
-        return g.control === row || g.target === row;
+      if (isControlledGate(g.type)) {
+        return g.control === row || g.control2 === row || g.target === row;
       }
       return g.qubit === row;
     }) ?? null

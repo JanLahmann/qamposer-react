@@ -4,11 +4,14 @@
  */
 
 import type { Gate, GateType, Circuit, QasmParseResult } from '../types';
+import { getGateQubits, isControlledGate } from './gates';
 
 const QASM_HEADER = 'OPENQASM 2.0;\ninclude "qelib1.inc";\n';
 
 /**
- * Gate type to OpenQASM instruction mapping
+ * Gate type to OpenQASM instruction mapping.
+ * CS/CT have no dedicated qelib1 name — they are emitted as `cu1(pi/2)` and
+ * `cu1(pi/4)` by `gateToQasmInstruction`.
  */
 const GATE_TO_QASM: Record<GateType, string> = {
   H: 'h',
@@ -18,6 +21,12 @@ const GATE_TO_QASM: Record<GateType, string> = {
   S: 's',
   T: 't',
   CNOT: 'cx',
+  CY: 'cy',
+  CZ: 'cz',
+  CH: 'ch',
+  CS: 'cu1',
+  CT: 'cu1',
+  CCX: 'ccx',
   RX: 'rx',
   RY: 'ry',
   RZ: 'rz',
@@ -34,10 +43,23 @@ const QASM_TO_GATE: Record<string, GateType> = {
   s: 'S',
   t: 'T',
   cx: 'CNOT',
+  cy: 'CY',
+  cz: 'CZ',
+  ch: 'CH',
+  ccx: 'CCX',
   rx: 'RX',
   ry: 'RY',
   rz: 'RZ',
 };
+
+/** Angle of the `cu1` phase a controlled-phase gate is emitted with. */
+const CONTROLLED_PHASE_ANGLES: Record<'CS' | 'CT', number> = {
+  CS: Math.PI / 2,
+  CT: Math.PI / 4,
+};
+
+/** Tolerance for recognising a `cu1` angle when parsing (matches formatParameter) */
+const PARAMETER_TOLERANCE = 0.0001;
 
 /**
  * Convert circuit to OpenQASM 2.0 code
@@ -76,10 +98,27 @@ function gateToQasmInstruction(gate: Gate): string | null {
   const qasmGate = GATE_TO_QASM[gate.type];
   if (!qasmGate) return null;
 
-  // Two-qubit gate (CNOT)
-  if (gate.type === 'CNOT') {
+  // Toffoli: two controls + target
+  if (gate.type === 'CCX') {
+    if (gate.control !== undefined && gate.control2 !== undefined && gate.target !== undefined) {
+      return `ccx q[${gate.control}], q[${gate.control2}], q[${gate.target}];`;
+    }
+    return null;
+  }
+
+  // Controlled-phase gates have no dedicated qelib1 name: cu1(pi/2) / cu1(pi/4)
+  if (gate.type === 'CS' || gate.type === 'CT') {
     if (gate.control !== undefined && gate.target !== undefined) {
-      return `cx q[${gate.control}], q[${gate.target}];`;
+      const angle = CONTROLLED_PHASE_ANGLES[gate.type];
+      return `cu1(${formatParameter(angle)}) q[${gate.control}], q[${gate.target}];`;
+    }
+    return null;
+  }
+
+  // Two-qubit controlled gates (CNOT, CY, CZ, CH)
+  if (isControlledGate(gate.type)) {
+    if (gate.control !== undefined && gate.target !== undefined) {
+      return `${qasmGate} q[${gate.control}], q[${gate.target}];`;
     }
     return null;
   }
@@ -134,24 +173,6 @@ function formatParameter(value: number): string {
 }
 
 /**
- * Get all qubit indices a gate occupies.
- * For CNOT, this includes all qubits between control and target
- * (the vertical line spans through them).
- */
-function getGateQubits(gate: Gate): number[] {
-  if (gate.type === 'CNOT' && gate.control !== undefined && gate.target !== undefined) {
-    const minQubit = Math.min(gate.control, gate.target);
-    const maxQubit = Math.max(gate.control, gate.target);
-    const qubits: number[] = [];
-    for (let q = minQubit; q <= maxQubit; q++) {
-      qubits.push(q);
-    }
-    return qubits;
-  }
-  return gate.qubit !== undefined ? [gate.qubit] : [];
-}
-
-/**
  * Compact gates to left-align them (remove gaps)
  */
 export function compactGates(gatesToCompact: Gate[]): Gate[] {
@@ -182,6 +203,16 @@ export function compactGates(gatesToCompact: Gate[]): Gate[] {
  */
 function validateGateQubits(gate: Gate, qubits: number, lineNum: number): string | null {
   const gateQubits = getGateQubits(gate);
+
+  // Controlled gates must act on pairwise distinct qubits
+  if (isControlledGate(gate.type)) {
+    const involved = [gate.control, gate.control2, gate.target].filter(
+      (q): q is number => q !== undefined
+    );
+    if (new Set(involved).size !== involved.length) {
+      return `Line ${lineNum}: ${gate.type} gate requires distinct qubits`;
+    }
+  }
 
   for (const qubitIndex of gateQubits) {
     if (qubitIndex >= qubits) {
@@ -277,14 +308,50 @@ function parseGateInstruction(
   // Remove trailing semicolon
   const instruction = line.replace(/;$/, '').trim();
 
-  // Two-qubit gate: cx q[0], q[1]
-  const cxMatch = instruction.match(/^cx\s+q\[(\d+)\]\s*,\s*q\[(\d+)\]$/);
-  if (cxMatch) {
+  // Toffoli: ccx q[0], q[1], q[2]
+  const ccxMatch = instruction.match(/^ccx\s+q\[(\d+)\]\s*,\s*q\[(\d+)\]\s*,\s*q\[(\d+)\]$/);
+  if (ccxMatch) {
     return {
       id: generateGateId(),
-      type: 'CNOT',
-      control: parseInt(cxMatch[1], 10),
-      target: parseInt(cxMatch[2], 10),
+      type: 'CCX',
+      control: parseInt(ccxMatch[1], 10),
+      control2: parseInt(ccxMatch[2], 10),
+      target: parseInt(ccxMatch[3], 10),
+      position,
+    };
+  }
+
+  // Controlled-phase gate: cu1(pi/2) q[0], q[1] → CS, cu1(pi/4) → CT
+  const cu1Match = instruction.match(/^cu1\s*\(\s*([^)]+)\s*\)\s*q\[(\d+)\]\s*,\s*q\[(\d+)\]$/);
+  if (cu1Match) {
+    const angle = parseParameter(cu1Match[1]);
+    const gateType =
+      angle === null
+        ? null
+        : (['CS', 'CT'] as const).find(
+            (type) => Math.abs(angle - CONTROLLED_PHASE_ANGLES[type]) < PARAMETER_TOLERANCE
+          );
+    if (!gateType) {
+      errors.push(`Line ${lineNum}: unsupported cu1 angle "${cu1Match[1].trim()}"`);
+      return null;
+    }
+    return {
+      id: generateGateId(),
+      type: gateType,
+      control: parseInt(cu1Match[2], 10),
+      target: parseInt(cu1Match[3], 10),
+      position,
+    };
+  }
+
+  // Two-qubit controlled gate: cx q[0], q[1] (also cy, cz, ch)
+  const controlledMatch = instruction.match(/^(cx|cy|cz|ch)\s+q\[(\d+)\]\s*,\s*q\[(\d+)\]$/);
+  if (controlledMatch) {
+    return {
+      id: generateGateId(),
+      type: QASM_TO_GATE[controlledMatch[1]],
+      control: parseInt(controlledMatch[2], 10),
+      target: parseInt(controlledMatch[3], 10),
       position,
     };
   }

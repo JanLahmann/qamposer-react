@@ -126,6 +126,133 @@ describe('simulateStatevector', () => {
   });
 });
 
+// Basis index i has qubit q set when (i >> q) & 1. With control q0 and target
+// q1: |00> -> 0, control-only -> 1, target-only -> 2, both -> 3.
+describe('controlled gates', () => {
+  const both = (type: SimulationGate['type']): SimulationGate[] => [
+    { type: 'X', qubit: 0, position: 0 },
+    { type: 'X', qubit: 1, position: 1 },
+    { type, control: 0, target: 1, position: 2 },
+  ];
+
+  it('CH on an |+> control produces (|00> + (|10> + |11>)/sqrt2)/sqrt2', () => {
+    const state = simulateStatevector(2, [
+      { type: 'H', qubit: 0, position: 0 },
+      { type: 'CH', control: 0, target: 1, position: 1 },
+    ]);
+    expect(state.re[0]).toBeCloseTo(SQRT1_2, 12);
+    expect(state.re[1]).toBeCloseTo(0.5, 12);
+    expect(state.re[3]).toBeCloseTo(0.5, 12);
+    expect(state.re[2]).toBeCloseTo(0, 12);
+  });
+
+  it('CZ flips the sign of |11> only', () => {
+    const state = simulateStatevector(2, both('CZ'));
+    expect(state.re[3]).toBeCloseTo(-1, 12);
+    expect(state.im[3]).toBeCloseTo(0, 12);
+  });
+
+  it('CY maps |11> to -i|10> (Y|1> = -i|0>)', () => {
+    const state = simulateStatevector(2, both('CY'));
+    expect(state.re[1]).toBeCloseTo(0, 12);
+    expect(state.im[1]).toBeCloseTo(-1, 12);
+  });
+
+  it('CS applies the phase i to |11> (controlled-phase, not controlled-RZ)', () => {
+    const state = simulateStatevector(2, both('CS'));
+    expect(state.re[3]).toBeCloseTo(0, 12);
+    expect(state.im[3]).toBeCloseTo(1, 12);
+  });
+
+  it('CT applies the phase e^{i*pi/4} to |11>', () => {
+    const state = simulateStatevector(2, both('CT'));
+    expect(state.re[3]).toBeCloseTo(SQRT1_2, 12);
+    expect(state.im[3]).toBeCloseTo(SQRT1_2, 12);
+  });
+
+  it('CS is a no-op when the control or the target is |0>', () => {
+    const controlZero = simulateStatevector(2, [
+      { type: 'X', qubit: 1, position: 0 },
+      { type: 'CS', control: 0, target: 1, position: 1 },
+    ]);
+    expect(controlZero.re[2]).toBeCloseTo(1, 12);
+
+    const targetZero = simulateStatevector(2, [
+      { type: 'X', qubit: 0, position: 0 },
+      { type: 'CS', control: 0, target: 1, position: 1 },
+    ]);
+    expect(targetZero.re[1]).toBeCloseTo(1, 12);
+  });
+
+  it('CCX flips the target only when both controls are |1>', () => {
+    const ccx: SimulationGate = { type: 'CCX', control: 0, control2: 1, target: 2, position: 3 };
+    const probTargetOne = (gates: SimulationGate[]) => {
+      const probs = probabilities(simulateStatevector(3, gates));
+      let p = 0;
+      for (let i = 0; i < probs.length; i++) {
+        if (i & 0b100) p += probs[i];
+      }
+      return p;
+    };
+
+    // |110> (q0 = q1 = 1) -> |111>
+    expect(
+      probTargetOne([
+        { type: 'X', qubit: 0, position: 0 },
+        { type: 'X', qubit: 1, position: 1 },
+        ccx,
+      ])
+    ).toBeCloseTo(1, 10);
+    // only one control set, or none -> target unchanged
+    expect(probTargetOne([{ type: 'X', qubit: 0, position: 0 }, ccx])).toBeCloseTo(0, 10);
+    expect(probTargetOne([{ type: 'X', qubit: 1, position: 0 }, ccx])).toBeCloseTo(0, 10);
+    expect(probTargetOne([ccx])).toBeCloseTo(0, 10);
+  });
+
+  it('CCX on a superposition of controls flips only the |11> branch', () => {
+    const state = simulateStatevector(3, [
+      { type: 'H', qubit: 0, position: 0 },
+      { type: 'H', qubit: 1, position: 1 },
+      { type: 'CCX', control: 0, control2: 1, target: 2, position: 2 },
+    ]);
+    // controls |11> -> target flipped: index 0b111 = 7
+    expect(state.re[7]).toBeCloseTo(0.5, 12);
+    // the other three control branches keep the target at |0>
+    expect(state.re[0]).toBeCloseTo(0.5, 12);
+    expect(state.re[1]).toBeCloseTo(0.5, 12);
+    expect(state.re[2]).toBeCloseTo(0.5, 12);
+  });
+
+  it('CNOT and a generic controlled-X agree on the Bell state', () => {
+    const viaCnot = simulateStatevector(2, bell());
+    const viaCcxLike = simulateStatevector(2, [
+      { type: 'H', qubit: 0, position: 0 },
+      { type: 'CZ', control: 0, target: 1, position: 1 },
+    ]);
+    // CZ leaves the magnitudes of H|0>|0> untouched (only phases)
+    expect(probabilities(viaCnot)[3]).toBeCloseTo(0.5, 12);
+    expect(probabilities(viaCcxLike)[1]).toBeCloseTo(0.5, 12);
+  });
+
+  it('rejects controlled gates with missing or colliding qubits', () => {
+    expect(() => simulateStatevector(2, [{ type: 'CZ', control: 0, position: 0 }])).toThrow(
+      'CZ gate requires control and target qubits'
+    );
+    expect(() =>
+      simulateStatevector(3, [{ type: 'CCX', control: 0, target: 2, position: 0 }])
+    ).toThrow('CCX gate requires control, control2 and target qubits');
+    expect(() =>
+      simulateStatevector(2, [{ type: 'CH', control: 1, target: 1, position: 0 }])
+    ).toThrow('distinct control and target');
+    expect(() =>
+      simulateStatevector(3, [{ type: 'CCX', control: 0, control2: 1, target: 1, position: 0 }])
+    ).toThrow('distinct control and target');
+    expect(() =>
+      simulateStatevector(3, [{ type: 'CCX', control: 0, control2: 1, target: 3, position: 0 }])
+    ).toThrow('out of range');
+  });
+});
+
 describe('sampleCounts', () => {
   it('uses Qiskit little-endian bitstring keys (qubit 0 rightmost)', () => {
     const state = simulateStatevector(2, [{ type: 'X', qubit: 0, position: 0 }]);

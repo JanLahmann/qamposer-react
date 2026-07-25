@@ -9,12 +9,14 @@ export interface CursorPosition {
 // Input source for Layer A
 export type InputSource = 'pointer' | 'keyboard';
 
-// FSM States (Layer B)
+// FSM States (Layer B).
+// The two-step control-then-target flow serves every 2-qubit controlled gate
+// (CNOT, CY, CZ, CH, CS, CT); `gateType` records which one is being placed.
 export type InteractionState =
   | { type: 'idle' }
   | { type: 'placing'; gateType: GateType }
-  | { type: 'cnot_control' }
-  | { type: 'cnot_target'; controlRow: number };
+  | { type: 'cnot_control'; gateType: GateType }
+  | { type: 'cnot_target'; gateType: GateType; controlRow: number };
 
 // Device-agnostic Actions
 export type InteractionAction =
@@ -30,7 +32,13 @@ export type InteractionAction =
 // Circuit Commands emitted by FSM
 export type CircuitCommand =
   | { type: 'PLACE_GATE'; gateType: GateType; row: number; col: number; parameter?: number }
-  | { type: 'PLACE_CNOT'; controlRow: number; targetRow: number; col: number }
+  | {
+      type: 'PLACE_CONTROLLED';
+      gateType: GateType;
+      controlRow: number;
+      targetRow: number;
+      col: number;
+    }
   | { type: 'DELETE_GATE'; row: number; col: number }
   | { type: 'UNDO' }
   | { type: 'REDO' };

@@ -39,12 +39,12 @@ function getModeInfo(state: InteractionState): { mode: string; hints: string } {
       };
     case 'cnot_control':
       return {
-        mode: 'CNOT: Select Control',
+        mode: `${state.gateType}: Select Control`,
         hints: 'Space: Confirm control / Esc: Cancel',
       };
     case 'cnot_target':
       return {
-        mode: 'CNOT: Select Target',
+        mode: `${state.gateType}: Select Target`,
         hints: 'Space: Confirm target / Esc: Cancel',
       };
   }

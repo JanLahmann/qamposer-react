@@ -223,7 +223,7 @@
     font-family: 'IBM Plex Mono', 'Menlo', 'Monaco', monospace;
   }
 
-  &__cnot {
+  &__controlled {
     position: absolute;
     transform: translateX(-50%);
     cursor: pointer;
@@ -231,7 +231,7 @@
     width: 40px;
 
     &--selected {
-      .circuit-editor__cnot-line {
+      .circuit-editor__controlled-line {
         stroke: var(--qamposer-accent, #4285f4);
         stroke-width: 3;
       }
@@ -241,17 +241,17 @@
       cursor: default;
       pointer-events: none;
 
-      .circuit-editor__cnot-line {
+      .circuit-editor__controlled-line {
         background: #8d8d8d;
         opacity: 0.7;
       }
 
-      .circuit-editor__cnot-control {
+      .circuit-editor__controlled-control {
         background: #8d8d8d;
         opacity: 0.7;
       }
 
-      .circuit-editor__cnot-target {
+      .circuit-editor__controlled-target {
         border-color: #8d8d8d;
         background: rgba(255, 255, 255, 0.7);
         opacity: 0.7;
@@ -260,6 +260,11 @@
         &::after {
           background: #8d8d8d;
         }
+      }
+
+      .circuit-editor__controlled-box {
+        background: #8d8d8d;
+        opacity: 0.7;
       }
     }
 
@@ -270,7 +275,7 @@
     }
   }
 
-  &__cnot-line {
+  &__controlled-line {
     position: absolute;
     left: 50%;
     top: 0;
@@ -280,7 +285,7 @@
     transform: translateX(-50%);
   }
 
-  &__cnot-control {
+  &__controlled-control {
     position: absolute;
     left: 50%;
     width: 8px;
@@ -290,7 +295,7 @@
     transform: translate(-50%, -50%);
   }
 
-  &__cnot-target {
+  &__controlled-target {
     position: absolute;
     left: 50%;
     width: 26px;
@@ -322,6 +327,27 @@
       width: 60%;
       transform: translateY(-50%);
     }
+  }
+
+  &__controlled-box {
+    position: absolute;
+    left: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 4px;
+    background: #002d9c;
+    transform: translate(-50%, -50%);
+  }
+
+  &__controlled-box-label {
+    color: white;
+    font-weight: 600;
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+    pointer-events: none;
   }
 
   &__measurements {

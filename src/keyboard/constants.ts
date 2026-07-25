@@ -19,8 +19,24 @@ export const NUMBER_KEY_GATES: Record<string, GateType> = {
   '7': 'CNOT',
 };
 
-// Ordered gate list for Q/E cycling
-export const GATE_CYCLE_ORDER: GateType[] = ['H', 'X', 'Y', 'Z', 'RX', 'RY', 'RZ', 'CNOT'];
+// Ordered gate list for Q/E cycling.
+// CCX is intentionally absent: the two-step keyboard flow only covers gates
+// with a single control (placing CCX by keyboard is out of scope).
+export const GATE_CYCLE_ORDER: GateType[] = [
+  'H',
+  'X',
+  'Y',
+  'Z',
+  'RX',
+  'RY',
+  'RZ',
+  'CNOT',
+  'CY',
+  'CZ',
+  'CH',
+  'CS',
+  'CT',
+];
 
 // Input source switch threshold (px)
 export const POINTER_MOVE_THRESHOLD = 8;

@@ -6,16 +6,34 @@
 // Gate Types
 // ============================================================================
 
-export type GateType = 'H' | 'X' | 'Y' | 'Z' | 'S' | 'T' | 'CNOT' | 'RX' | 'RY' | 'RZ';
+export type GateType =
+  | 'H'
+  | 'X'
+  | 'Y'
+  | 'Z'
+  | 'S'
+  | 'T'
+  | 'CNOT'
+  | 'CY'
+  | 'CZ'
+  | 'CH'
+  | 'CS'
+  | 'CT'
+  | 'CCX'
+  | 'RX'
+  | 'RY'
+  | 'RZ';
 
 export interface Gate {
   id: string;
   type: GateType;
   /** Target qubit for single-qubit gates */
   qubit?: number;
-  /** Control qubit for CNOT */
+  /** Control qubit for controlled gates (CNOT, CY, CZ, CH, CS, CT, CCX) */
   control?: number;
-  /** Target qubit for CNOT */
+  /** Second control qubit for CCX */
+  control2?: number;
+  /** Target qubit for controlled gates (CNOT, CY, CZ, CH, CS, CT, CCX) */
   target?: number;
   /** Parameter in radians for rotation gates (RX, RY, RZ) */
   parameter?: number;
