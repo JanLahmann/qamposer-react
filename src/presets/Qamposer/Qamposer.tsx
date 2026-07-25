@@ -6,7 +6,7 @@ import { ResultsPanel } from '../../components/ResultsPanel';
 import { QSphereView } from '../../components/QSphereView';
 import { CodeEditor } from '../../components/CodeEditor';
 import { SimulationControls } from '../../components/SimulationControls';
-import type { QamposerProviderProps } from '../../types';
+import type { GateType, QamposerProviderProps } from '../../types';
 import './Qamposer.scss';
 
 export interface QamposerProps extends Omit<QamposerProviderProps, 'children'> {
@@ -26,6 +26,8 @@ export interface QamposerProps extends Omit<QamposerProviderProps, 'children'> {
   defaultTheme?: Theme;
   /** Show theme toggle button (default: true) */
   showThemeToggle?: boolean;
+  /** When set, only these gate types appear in the operations palette */
+  gateTypes?: GateType[];
 }
 
 /**
@@ -47,6 +49,7 @@ export function Qamposer({
   bottomGridTemplate = '1fr 1fr',
   defaultTheme = 'dark',
   showThemeToggle = true,
+  gateTypes,
   ...providerProps
 }: QamposerProps) {
   return (
@@ -60,6 +63,7 @@ export function Qamposer({
           topGridTemplate={topGridTemplate}
           bottomGridTemplate={bottomGridTemplate}
           showThemeToggle={showThemeToggle}
+          gateTypes={gateTypes}
         />
       </QamposerProvider>
     </ThemeProvider>
@@ -75,6 +79,7 @@ function QamposerContent({
   topGridTemplate,
   bottomGridTemplate,
   showThemeToggle,
+  gateTypes,
 }: {
   className: string;
   showHeader: boolean;
@@ -83,6 +88,7 @@ function QamposerContent({
   topGridTemplate: string;
   bottomGridTemplate: string;
   showThemeToggle: boolean;
+  gateTypes?: GateType[];
 }) {
   const { theme, toggleTheme } = useTheme();
 
@@ -119,7 +125,7 @@ function QamposerContent({
             style={{ gridTemplateColumns: topGridTemplate } as React.CSSProperties}
           >
             <aside className="qamposer__operations">
-              <Operations />
+              <Operations gateTypes={gateTypes} />
             </aside>
             <main className="qamposer__circuit">
               <CircuitEditor />

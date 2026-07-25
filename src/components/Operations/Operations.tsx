@@ -47,9 +47,11 @@ const CONTROLLED_ICON_LABELS: Partial<Record<GateType, string>> = {
 export interface OperationsProps {
   /** Additional CSS class */
   className?: string;
+  /** When set, only these gate types appear in the palette (library order kept). */
+  gateTypes?: GateType[];
 }
 
-export function Operations({ className = '' }: OperationsProps = {}) {
+export function Operations({ className = '', gateTypes }: OperationsProps = {}) {
   const { editingGate, setEditingGate, updateGate } = useQamposer();
 
   if (editingGate) {
@@ -63,11 +65,17 @@ export function Operations({ className = '' }: OperationsProps = {}) {
     );
   }
 
-  return <GateLibrary className={className} />;
+  return <GateLibrary className={className} gateTypes={gateTypes} />;
 }
 
 // GateLibrary sub-component
-function GateLibrary({ className = '' }: { className?: string }) {
+function GateLibrary({
+  className = '',
+  gateTypes,
+}: {
+  className?: string;
+  gateTypes?: GateType[];
+}) {
   const { circuit } = useQamposer();
 
   /** Qubits a controlled gate needs: 3 for CCX (two controls), 2 otherwise. */
@@ -132,10 +140,16 @@ function GateLibrary({ className = '' }: { className?: string }) {
     );
   };
 
-  const singleQubitGates = GATE_DEFINITIONS.filter(
+  // Restrict the palette when an embedder passes `gateTypes`; unknown entries are
+  // ignored and GATE_DEFINITIONS order wins over the order of the prop.
+  const availableGates = gateTypes
+    ? GATE_DEFINITIONS.filter((g) => gateTypes.includes(g.type))
+    : GATE_DEFINITIONS;
+
+  const singleQubitGates = availableGates.filter(
     (g) => g.category === 'single' || g.category === 'rotation'
   );
-  const multiQubitGates = GATE_DEFINITIONS.filter((g) => g.category === 'multi');
+  const multiQubitGates = availableGates.filter((g) => g.category === 'multi');
 
   return (
     <div className={`operations ${className}`.trim()}>
@@ -144,25 +158,29 @@ function GateLibrary({ className = '' }: { className?: string }) {
       </div>
 
       <div className="operations__sections">
-        <div className="operations__section">
-          <button className="operations__section-header" onClick={() => toggleSection('single')}>
-            <ChevronIcon expanded={expandedSections.single} />
-            <span>Single-Qubit Gates</span>
-          </button>
-          {expandedSections.single && (
-            <div className="operations__grid">{singleQubitGates.map(renderGate)}</div>
-          )}
-        </div>
+        {singleQubitGates.length > 0 && (
+          <div className="operations__section">
+            <button className="operations__section-header" onClick={() => toggleSection('single')}>
+              <ChevronIcon expanded={expandedSections.single} />
+              <span>Single-Qubit Gates</span>
+            </button>
+            {expandedSections.single && (
+              <div className="operations__grid">{singleQubitGates.map(renderGate)}</div>
+            )}
+          </div>
+        )}
 
-        <div className="operations__section">
-          <button className="operations__section-header" onClick={() => toggleSection('multi')}>
-            <ChevronIcon expanded={expandedSections.multi} />
-            <span>Multi-Qubit Gates</span>
-          </button>
-          {expandedSections.multi && (
-            <div className="operations__grid">{multiQubitGates.map(renderGate)}</div>
-          )}
-        </div>
+        {multiQubitGates.length > 0 && (
+          <div className="operations__section">
+            <button className="operations__section-header" onClick={() => toggleSection('multi')}>
+              <ChevronIcon expanded={expandedSections.multi} />
+              <span>Multi-Qubit Gates</span>
+            </button>
+            {expandedSections.multi && (
+              <div className="operations__grid">{multiQubitGates.map(renderGate)}</div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

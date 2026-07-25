@@ -3,7 +3,7 @@ import { ThemeProvider, useTheme, type Theme } from '../../context/ThemeContext'
 import { Operations } from '../../components/Operations';
 import { CircuitEditor } from '../../components/CircuitEditor';
 import { SimulationControls } from '../../components/SimulationControls';
-import type { QamposerProviderProps } from '../../types';
+import type { GateType, QamposerProviderProps } from '../../types';
 import './QamposerMicro.scss';
 
 export interface QamposerMicroProps extends Omit<QamposerProviderProps, 'children'> {
@@ -19,6 +19,8 @@ export interface QamposerMicroProps extends Omit<QamposerProviderProps, 'childre
   defaultTheme?: Theme;
   /** Show theme toggle button (default: true) */
   showThemeToggle?: boolean;
+  /** When set, only these gate types appear in the operations palette */
+  gateTypes?: GateType[];
 }
 
 /**
@@ -39,6 +41,7 @@ export function QamposerMicro({
   gridTemplate = '1fr 3fr',
   defaultTheme = 'dark',
   showThemeToggle = true,
+  gateTypes,
   ...providerProps
 }: QamposerMicroProps) {
   return (
@@ -50,6 +53,7 @@ export function QamposerMicro({
           title={title}
           gridTemplate={gridTemplate}
           showThemeToggle={showThemeToggle}
+          gateTypes={gateTypes}
         />
       </QamposerProvider>
     </ThemeProvider>
@@ -63,12 +67,14 @@ function QamposerMicroContent({
   title,
   gridTemplate,
   showThemeToggle,
+  gateTypes,
 }: {
   className: string;
   showHeader: boolean;
   title: string;
   gridTemplate: string;
   showThemeToggle: boolean;
+  gateTypes?: GateType[];
 }) {
   const { theme, toggleTheme } = useTheme();
 
@@ -98,7 +104,7 @@ function QamposerMicroContent({
         style={{ gridTemplateColumns: gridTemplate } as React.CSSProperties}
       >
         <aside className="qamposer-micro__operations">
-          <Operations />
+          <Operations gateTypes={gateTypes} />
         </aside>
         <main className="qamposer-micro__circuit">
           <CircuitEditor />
