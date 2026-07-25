@@ -193,12 +193,30 @@ interface QamposerProps {
   defaultTheme?: 'light' | 'dark'; // Default: 'dark'
   showThemeToggle?: boolean; // Default: true
 
+  // Gate palette
+  gateTypes?: GateType[]; // Default: undefined (full palette)
+
   // Layout (Qamposer only)
   codeEditorWidth?: string; // Default: '280px'
   topGridTemplate?: string; // Default: '1fr 3fr'
   bottomGridTemplate?: string; // Default: '1fr 1fr'
 }
 ```
+
+#### Restricting the gate palette
+
+`gateTypes` limits which gates the Operations panel offers — useful for embedders
+that unlock gates progressively (a tutorial, a game level). It is passed through
+to the `Operations` component, which also accepts it directly:
+
+```tsx
+<QamposerMicro adapter={adapter} gateTypes={['H', 'X', 'CNOT']} />
+```
+
+Gates always render in library order regardless of the order given, and a
+section (Single-Qubit / Multi-Qubit) with no remaining gates is hidden entirely.
+Omitting the prop keeps the full palette. Filtering affects the palette only —
+gates already present in the circuit stay editable.
 
 ### QamposerConfig
 
