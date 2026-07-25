@@ -184,6 +184,12 @@ export interface QamposerContextValue {
   qasmCode: string;
   parseError: string | null;
   editingGate: Gate | null;
+  /**
+   * Palette gate currently "armed" for tap-to-place, or null.
+   * Set by tapping a palette tile; the circuit editor consumes it when a wire
+   * is tapped and clears it once the gate has been placed.
+   */
+  armedGateType: GateType | null;
 
   // Circuit Actions
   addGate: (gate: Omit<Gate, 'id'>) => void;
@@ -197,6 +203,9 @@ export interface QamposerContextValue {
 
   // Gate Editing
   setEditingGate: (gate: Gate | null) => void;
+
+  // Tap-to-place
+  setArmedGateType: (gateType: GateType | null) => void;
 
   // QASM
   importQasm: (code: string) => QasmParseResult;

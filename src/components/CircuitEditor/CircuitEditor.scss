@@ -273,6 +273,19 @@
       cursor: default;
       pointer-events: none;
     }
+
+    // Tap-to-place: controls chosen, target still pending
+    &--pending {
+      .circuit-editor__controlled-line {
+        background: var(--qamposer-accent, #4285f4);
+        opacity: 0.8;
+      }
+
+      .circuit-editor__controlled-control {
+        background: var(--qamposer-accent, #4285f4);
+        opacity: 1;
+      }
+    }
   }
 
   &__controlled-line {
@@ -437,6 +450,55 @@
     &--danger:hover:not(:disabled) {
       background: rgba(218, 30, 40, 0.2);
       color: #fa4d56;
+    }
+  }
+
+  // Tap-to-place instruction, floating above the canvas while a gate is armed
+  &__touch-hint {
+    position: absolute;
+    top: 0.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1100;
+    pointer-events: none;
+    max-width: calc(100% - 1rem);
+    padding: 0.25rem 0.75rem;
+    border: 1px solid var(--qamposer-accent, #4285f4);
+    border-radius: 999px;
+    background: var(--qamposer-bg-primary, #161616);
+    color: var(--qamposer-text-primary, #f4f4f4);
+    font-size: 0.75rem;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  // Touch devices: keep the visual size but grow the hit area to 44px so the
+  // toolbar (the only way to delete a gate) stays usable with a fingertip.
+  @media (pointer: coarse) {
+    &__toolbar {
+      gap: 12px;
+      padding: 6px;
+    }
+
+    &__toolbar-btn {
+      position: relative;
+
+      &::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 44px;
+        height: 44px;
+        transform: translate(-50%, -50%);
+      }
+    }
+
+    &__touch-hint {
+      font-size: 0.875rem;
+      padding: 0.375rem 1rem;
     }
   }
 }
