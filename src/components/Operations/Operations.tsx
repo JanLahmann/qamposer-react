@@ -76,7 +76,7 @@ function GateLibrary({
   className?: string;
   gateTypes?: GateType[];
 }) {
-  const { circuit } = useQamposer();
+  const { circuit, armedGateType, setArmedGateType } = useQamposer();
 
   /** Qubits a controlled gate needs: 3 for CCX (two controls), 2 otherwise. */
   const requiredQubits = (gateType: GateType) => (gateType === 'CCX' ? 3 : 2);
@@ -88,15 +88,29 @@ function GateLibrary({
     multi: false,
   });
 
+  // Shrinking the register can invalidate an already armed controlled gate.
+  const armedIsDisabled = armedGateType !== null && isGateDisabled(armedGateType);
+  useEffect(() => {
+    if (armedIsDisabled) setArmedGateType(null);
+  }, [armedIsDisabled, setArmedGateType]);
+
   const handleDragStart = (event: React.DragEvent, gateType: GateType) => {
     // Prevent dragging a controlled gate onto a register that is too small
     if (isGateDisabled(gateType)) {
       event.preventDefault();
       return;
     }
+    // Dragging and tap-to-place are mutually exclusive; a drag wins.
+    setArmedGateType(null);
     event.dataTransfer.setData('gateType', gateType);
     event.dataTransfer.setData(`application/x-gate-${gateType.toLowerCase()}`, '');
     event.dataTransfer.effectAllowed = 'copy';
+  };
+
+  /** Tap/click a tile: arm it, or disarm when it is already armed. */
+  const handleTileActivate = (gateType: GateType) => {
+    if (isGateDisabled(gateType)) return;
+    setArmedGateType(armedGateType === gateType ? null : gateType);
   };
 
   const toggleSection = (section: string) => {
@@ -107,12 +121,32 @@ function GateLibrary({
   };
 
   const renderGate = (gate: GateInfo) => {
+    const isDisabled = isGateDisabled(gate.type);
+    const isArmed = armedGateType === gate.type;
+
+    // Shared tap-to-place wiring: the tile behaves as a toggle button while
+    // staying a plain draggable element for the mouse drag-and-drop path.
+    const tapProps = {
+      role: 'button' as const,
+      tabIndex: isDisabled ? -1 : 0,
+      'aria-pressed': isArmed,
+      'aria-disabled': isDisabled || undefined,
+      onClick: () => handleTileActivate(gate.type),
+      onKeyDown: (event: React.KeyboardEvent) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          handleTileActivate(gate.type);
+        }
+      },
+    };
+
     if (isControlledGate(gate.type)) {
-      const isDisabled = isGateDisabled(gate.type);
       return (
         <div
           key={gate.type}
-          className={`operations__gate operations__gate--cnot ${isDisabled ? 'operations__gate--disabled' : ''}`}
+          className={`operations__gate operations__gate--cnot ${isDisabled ? 'operations__gate--disabled' : ''} ${
+            isArmed ? 'operations__gate--armed' : ''
+          }`.trim()}
           draggable={!isDisabled}
           onDragStart={(e) => handleDragStart(e, gate.type)}
           title={
@@ -120,6 +154,7 @@ function GateLibrary({
               ? `${gate.type} requires at least ${requiredQubits(gate.type)} qubits`
               : gate.description
           }
+          {...tapProps}
         >
           <ControlledGateIcon type={gate.type} color={gate.color} />
         </div>
@@ -129,11 +164,12 @@ function GateLibrary({
     return (
       <div
         key={gate.type}
-        className="operations__gate"
+        className={`operations__gate ${isArmed ? 'operations__gate--armed' : ''}`.trim()}
         draggable
         onDragStart={(e) => handleDragStart(e, gate.type)}
         style={{ backgroundColor: gate.color }}
         title={gate.description}
+        {...tapProps}
       >
         <span className="operations__gate-label">{gate.label}</span>
       </div>

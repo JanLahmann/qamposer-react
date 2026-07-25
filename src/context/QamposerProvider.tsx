@@ -14,6 +14,7 @@ import type {
   QamposerConfig,
   QamposerContextValue,
   QasmParseResult,
+  GateType,
 } from '../types';
 
 const DEFAULT_CONFIG: Required<QamposerConfig> = {
@@ -93,6 +94,9 @@ export function QamposerProvider({
 
   // Gate editing state
   const [editingGate, setEditingGate] = useState<Gate | null>(null);
+
+  // Tap-to-place: gate armed in the palette, consumed by the circuit editor
+  const [armedGateType, setArmedGateType] = useState<GateType | null>(null);
 
   // QASM state
   const [qasmCode, setQasmCodeState] = useState(() => circuitToQasm(circuit));
@@ -457,6 +461,7 @@ export function QamposerProvider({
       qasmCode,
       parseError,
       editingGate,
+      armedGateType,
 
       // Circuit Actions
       addGate,
@@ -470,6 +475,9 @@ export function QamposerProvider({
 
       // Gate Editing
       setEditingGate,
+
+      // Tap-to-place
+      setArmedGateType,
 
       // QASM
       importQasm,
@@ -494,6 +502,7 @@ export function QamposerProvider({
       qasmCode,
       parseError,
       editingGate,
+      armedGateType,
       addGate,
       removeGate,
       updateGate,

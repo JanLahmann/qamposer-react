@@ -124,6 +124,17 @@
         transform: none;
       }
     }
+
+    // Armed for tap-to-place: the next wire tap places this gate
+    &--armed {
+      outline: 2px solid var(--qamposer-accent, #4285f4);
+      outline-offset: 2px;
+      box-shadow: 0 0 0 4px rgba(66, 133, 244, 0.25);
+
+      &:hover {
+        box-shadow: 0 0 0 4px rgba(66, 133, 244, 0.35);
+      }
+    }
   }
 
   &__gate-label {
@@ -235,5 +246,40 @@
     margin-top: 0.5rem;
     font-size: 0.75rem;
     color: var(--qamposer-error, #da1e28);
+  }
+
+  // Touch devices: 32px tiles are far below the 44px minimum tap target, which
+  // makes tap-to-place (and the HTML5 drag fallback) unreliable on phones.
+  // Fine-pointer visuals are untouched.
+  @media (pointer: coarse) {
+    &__grid {
+      grid-template-columns: repeat(3, 44px);
+      gap: 0.75rem;
+    }
+
+    &__gate {
+      width: 44px;
+      height: 44px;
+
+      &--cnot svg {
+        width: 44px;
+        height: 44px;
+      }
+    }
+
+    &__gate-label {
+      font-size: 1rem;
+    }
+
+    &__section-header {
+      min-height: 48px;
+      padding: 1rem;
+      font-size: 1rem;
+    }
+
+    &__close-btn {
+      width: 44px;
+      height: 44px;
+    }
   }
 }

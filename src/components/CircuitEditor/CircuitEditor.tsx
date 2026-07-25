@@ -51,13 +51,49 @@ const MIN_POSITIONS = 20;
 const COLUMN_GAP = 20;
 const MIN_LEFT_MARGIN = 16;
 
+/** Rotation gates get this default angle when placed by drag or tap. */
+const DEFAULT_ROTATION_PARAMETER = Math.PI / 2;
+const ROTATION_GATE_TYPES: GateType[] = ['RX', 'RY', 'RZ'];
+
+/**
+ * Extra vertical stub drawn below the last control of a pending (tap-placed)
+ * controlled gate, so the hint line stays visible before a target is chosen.
+ */
+const PENDING_HINT_STUB = QUBIT_HEIGHT / 2;
+
+/**
+ * Which qubits a gate occupies, in the shape `Gate` expects: either a single
+ * `qubit` or the control/target roles of a controlled gate.
+ */
+type GateRoles =
+  { qubit: number } | { control: number; control2?: number; target: number; qubit?: undefined };
+
+/** Multi-tap placement in progress: column locked, controls collected so far. */
+interface PendingTouchPlacement {
+  /** Canvas X of the first tap — replayed so the column snaps identically. */
+  canvasX: number;
+  /** Snapped column, for rendering the pending indicator. */
+  column: number;
+  /** Control rows tapped so far (1 for CNOT-likes, up to 2 for CCX). */
+  controls: number[];
+}
+
 export interface CircuitEditorProps {
   /** Additional CSS class */
   className?: string;
 }
 
 export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
-  const { circuit, updateGates, addQubit, removeQubit, setEditingGate, config } = useQamposer();
+  const {
+    circuit,
+    updateGates,
+    addQubit,
+    removeQubit,
+    setEditingGate,
+    config,
+    armedGateType,
+    setArmedGateType,
+  } = useQamposer();
 
   const { qubits, gates } = circuit;
 
@@ -66,10 +102,12 @@ export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
   const [selectedGateId, setSelectedGateId] = useState<string | null>(null);
   const [selectedQubitIndex, setSelectedQubitIndex] = useState<number | null>(null);
   const [draggingGateType, setDraggingGateType] = useState<GateType | null>(null);
+  const [pendingTouch, setPendingTouch] = useState<PendingTouchPlacement | null>(null);
   const [previewShiftedGates, setPreviewShiftedGates] = useState<
     { id: string; newPosition: number }[]
   >([]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const lanesRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number | null>(null);
   const lastDropPositionRef = useRef<{ qubit: number; position: number } | null>(null);
 
@@ -160,6 +198,28 @@ export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
     }
   }, [inputSource]);
 
+  // Arming (or disarming) a palette gate resets any half-finished multi-tap and
+  // hides the selection toolbars — tap-to-place owns the canvas while armed.
+  useEffect(() => {
+    setPendingTouch(null);
+    if (armedGateType) {
+      setSelectedGateId(null);
+      setSelectedQubitIndex(null);
+    }
+  }, [armedGateType]);
+
+  // Escape cancels tap-to-place (pending controls first, then the armed gate).
+  useEffect(() => {
+    if (!armedGateType) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setPendingTouch(null);
+      setArmedGateType(null);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [armedGateType, setArmedGateType]);
+
   // Default qubit assignment when a controlled gate is dropped on a lane:
   // the gate is anchored at the drop lane and extends downwards, clamped so it
   // still fits inside the register.
@@ -181,37 +241,41 @@ export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
     [qubits]
   );
 
-  // Calculate drop position based on mouse X
-  const calculateDropPosition = useCallback(
-    (
-      mouseX: number,
-      qubit: number,
-      gateType: GateType
-    ): {
-      initialPosition: number;
-      finalPosition: number;
-      shiftedGates: { id: string; newPosition: number }[];
-      control?: number;
-      control2?: number;
-      target?: number;
-    } => {
+  /** Column whose centre is nearest to a canvas-space X coordinate. */
+  const snapColumn = useCallback(
+    (canvasX: number): number => {
       let closestPos = 0;
       let minDistance = Infinity;
       for (let pos = 0; pos < numPositions; pos++) {
-        const distance = Math.abs(columnCenterXs[pos] - mouseX);
+        const distance = Math.abs(columnCenterXs[pos] - canvasX);
         if (distance < minDistance) {
           minDistance = distance;
           closestPos = pos;
         }
       }
+      return closestPos;
+    },
+    [columnCenterXs, numPositions]
+  );
 
-      const controlledQubits = controlledDropQubits(gateType, qubit);
-      const control = controlledQubits?.control;
-      const control2 = controlledQubits?.control2;
-      const target = controlledQubits?.target;
-      const targetQubits = controlledQubits
-        ? getGateQubits({ type: gateType, ...controlledQubits })
-        : [qubit];
+  /**
+   * Where a gate lands for a given canvas X and set of qubit roles: the snapped
+   * column, the position after insert-shifting and compaction, and which
+   * existing gates move. Shared by the drag preview, the drop handler and
+   * tap-to-place so all three snap and shift identically.
+   */
+  const planPlacement = useCallback(
+    (
+      canvasX: number,
+      gateType: GateType,
+      roles: GateRoles
+    ): {
+      initialPosition: number;
+      finalPosition: number;
+      shiftedGates: { id: string; newPosition: number }[];
+    } => {
+      const closestPos = snapColumn(canvasX);
+      const targetQubits = getGateQubits({ type: gateType, ...roles });
 
       const rightWall = gates
         .filter((g) => {
@@ -240,13 +304,7 @@ export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
         return g;
       });
 
-      const tempGate: Gate = {
-        id: 'temp',
-        type: gateType,
-        position: initialPosition,
-        ...(controlledQubits ? controlledQubits : { qubit }),
-        ...(['RX', 'RY', 'RZ'].includes(gateType) ? { parameter: Math.PI / 2 } : {}),
-      };
+      const tempGate: Gate = { ...buildGate(gateType, initialPosition, roles), id: 'temp' };
 
       const compacted = compactGates([...shiftedGatesForInsert, tempGate]);
       const finalGate = compacted.find((g) => g.id === 'temp');
@@ -264,9 +322,56 @@ export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
         }
       });
 
-      return { initialPosition, finalPosition, shiftedGates, control, control2, target };
+      return { initialPosition, finalPosition, shiftedGates };
     },
-    [columnCenterXs, controlledDropQubits, gates, numPositions]
+    [gates, snapColumn]
+  );
+
+  /**
+   * Default roles for a gate dropped/tapped on a single lane: the lane itself
+   * for single-qubit gates, the downward-extending span for controlled ones.
+   */
+  const rolesForLane = useCallback(
+    (gateType: GateType, qubit: number): GateRoles =>
+      controlledDropQubits(gateType, qubit) ?? { qubit },
+    [controlledDropQubits]
+  );
+
+  /** Canvas-space X (scroll-independent) for a pointer's clientX. */
+  const toCanvasX = useCallback((clientX: number): number | null => {
+    const container = scrollContainerRef.current;
+    if (!container) return null;
+    const containerRect = container.getBoundingClientRect();
+    return clientX - containerRect.left + container.scrollLeft;
+  }, []);
+
+  /**
+   * Insert a new gate at the column `canvasX` snaps to, shifting and compacting
+   * exactly as a drop does. Used by both the drop handler and tap-to-place.
+   */
+  const commitPlacement = useCallback(
+    (canvasX: number, gateType: GateType, roles: GateRoles) => {
+      if (gates.length >= config.maxGates) {
+        console.warn(`Maximum gate limit (${config.maxGates}) reached`);
+        return;
+      }
+
+      const { initialPosition } = planPlacement(canvasX, gateType, roles);
+      const targetQubits = getGateQubits({ type: gateType, ...roles });
+
+      const shiftedGates = gates.map((g) => {
+        const gateQubits = getGateQubits(g);
+        const overlapsQubit = targetQubits.some((q) => gateQubits.includes(q));
+        if (overlapsQubit && g.position >= initialPosition) {
+          return { ...g, position: g.position + 1 };
+        }
+        return g;
+      });
+
+      const newGate = buildGate(gateType, initialPosition, roles);
+      updateGates(compactGates([...shiftedGates, newGate]));
+    },
+    [config.maxGates, gates, planPlacement, updateGates]
   );
 
   const handleDragOver = useCallback(
@@ -295,16 +400,15 @@ export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = null;
 
-        if (!scrollContainerRef.current || !currentGateType) return;
+        if (!currentGateType) return;
 
         // Use scroll container rect + scrollLeft for scroll-independent coordinate
-        const containerRect = scrollContainerRef.current.getBoundingClientRect();
-        const scrollLeft = scrollContainerRef.current.scrollLeft;
-        const mouseX = clientX - containerRect.left + scrollLeft;
-        const { finalPosition, shiftedGates } = calculateDropPosition(
+        const mouseX = toCanvasX(clientX);
+        if (mouseX === null) return;
+        const { finalPosition, shiftedGates } = planPlacement(
           mouseX,
-          qubit,
-          currentGateType
+          currentGateType,
+          rolesForLane(currentGateType, qubit)
         );
 
         // Stability check: skip setState if position hasn't changed
@@ -319,7 +423,7 @@ export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
         setPreviewShiftedGates(shiftedGates);
       });
     },
-    [draggingGateType, calculateDropPosition]
+    [draggingGateType, planPlacement, rolesForLane, toCanvasX]
   );
 
   const handleDragLeave = () => {
@@ -358,52 +462,75 @@ export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
     setPreviewShiftedGates([]);
 
     const gateType = event.dataTransfer.getData('gateType') as GateType;
-    if (!gateType || !scrollContainerRef.current) return;
+    if (!gateType) return;
 
-    if (gates.length >= config.maxGates) {
-      console.warn(`Maximum gate limit (${config.maxGates}) reached`);
+    const mouseX = toCanvasX(event.clientX);
+    if (mouseX === null) return;
+
+    commitPlacement(mouseX, gateType, rolesForLane(gateType, qubit));
+  };
+
+  // === Tap-to-place ===
+
+  /** How many control rows the armed gate still collects before its target. */
+  const requiredControls = armedGateType === 'CCX' ? 2 : 1;
+
+  /**
+   * A tap on a wire while a palette gate is armed. Single-qubit gates place
+   * immediately; controlled gates collect control rows first, with the column
+   * locked by the very first tap.
+   */
+  const handleWireTap = (clientX: number, qubit: number) => {
+    if (!armedGateType) return;
+    const gateType = armedGateType;
+
+    if (!isControlledGate(gateType)) {
+      const canvasX = toCanvasX(clientX);
+      if (canvasX === null) return;
+      commitPlacement(canvasX, gateType, { qubit });
+      setArmedGateType(null);
       return;
     }
 
-    const containerRect = scrollContainerRef.current.getBoundingClientRect();
-    const scrollLeft = scrollContainerRef.current.scrollLeft;
-    const mouseX = event.clientX - containerRect.left + scrollLeft;
-    const { initialPosition, control, control2, target } = calculateDropPosition(
-      mouseX,
-      qubit,
-      gateType
-    );
+    if (!pendingTouch) {
+      const canvasX = toCanvasX(clientX);
+      if (canvasX === null) return;
+      setPendingTouch({ canvasX, column: snapColumn(canvasX), controls: [qubit] });
+      return;
+    }
 
-    const controlledQubits =
-      control !== undefined && target !== undefined
-        ? { control, ...(control2 !== undefined ? { control2 } : {}), target }
-        : null;
-    const targetQubits = controlledQubits
-      ? getGateQubits({ type: gateType, ...controlledQubits })
-      : [qubit];
+    // Re-tapping a row already used by this gate is a no-op, not a mistake.
+    if (pendingTouch.controls.includes(qubit)) return;
 
-    const shiftedGates = gates.map((g) => {
-      const gateQubits = getGateQubits(g);
-      const overlapsQubit = targetQubits.some((q) => gateQubits.includes(q));
-      if (overlapsQubit && g.position >= initialPosition) {
-        return { ...g, position: g.position + 1 };
-      }
-      return g;
-    });
+    if (pendingTouch.controls.length < requiredControls) {
+      setPendingTouch({ ...pendingTouch, controls: [...pendingTouch.controls, qubit] });
+      return;
+    }
 
-    const newGate: Gate = {
-      id: generateGateId(),
-      type: gateType,
-      position: initialPosition,
-      ...(controlledQubits ? controlledQubits : { qubit }),
-      ...(['RX', 'RY', 'RZ'].includes(gateType) ? { parameter: Math.PI / 2 } : {}),
-    };
+    const [control, control2] = pendingTouch.controls;
+    const roles: GateRoles =
+      control2 !== undefined ? { control, control2, target: qubit } : { control, target: qubit };
 
-    const updatedGates = compactGates([...shiftedGates, newGate]);
-    updateGates(updatedGates);
+    commitPlacement(pendingTouch.canvasX, gateType, roles);
+    setPendingTouch(null);
+    setArmedGateType(null);
   };
 
-  const handleGateClick = (gateId: string) => {
+  /** Qubit row under a pointer's clientY, or null when outside the lanes. */
+  const qubitFromClientY = (clientY: number): number | null => {
+    const lanes = lanesRef.current;
+    if (!lanes) return null;
+    const row = Math.floor((clientY - lanes.getBoundingClientRect().top) / QUBIT_HEIGHT);
+    return row >= 0 && row < qubits ? row : null;
+  };
+
+  const handleGateClick = (gateId: string, event: React.MouseEvent) => {
+    // While armed, a tap on a placed gate places too — selection stays suppressed.
+    if (armedGateType) {
+      const qubit = qubitFromClientY(event.clientY);
+      if (qubit !== null) handleWireTap(event.clientX, qubit);
+      return;
+    }
     setSelectedGateId(selectedGateId === gateId ? null : gateId);
     setSelectedQubitIndex(null);
   };
@@ -454,7 +581,7 @@ export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
           className={`circuit-editor__controlled ${
             isSelected ? 'circuit-editor__controlled--selected' : ''
           }`}
-          onClick={() => handleGateClick(gate.id)}
+          onClick={(event) => handleGateClick(gate.id, event)}
         />
       );
     }
@@ -478,7 +605,7 @@ export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
           top: `${gate.qubit * QUBIT_HEIGHT + QUBIT_HEIGHT / 2}px`,
           backgroundColor: GATE_COLORS[gate.type],
         }}
-        onClick={() => handleGateClick(gate.id)}
+        onClick={(event) => handleGateClick(gate.id, event)}
       >
         <span className="circuit-editor__gate-label">
           {gate.type}
@@ -502,6 +629,13 @@ export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
 
   return (
     <div className={`circuit-editor ${className}`.trim()} onDragEnd={handleDragEnd}>
+      {/* Tap-to-place guidance; only shown while a palette gate is armed */}
+      {armedGateType && (
+        <div className="circuit-editor__touch-hint" role="status">
+          {touchHint(armedGateType, pendingTouch, requiredControls)}
+        </div>
+      )}
+
       <div className="circuit-editor__canvas">
         {/* Fixed qubit labels - outside scroll area */}
         <div className="circuit-editor__labels">
@@ -528,7 +662,7 @@ export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
             style={{ minWidth: `${minCircuitWidth}px` }}
           >
             {/* Qubit lanes */}
-            <div className="circuit-editor__lanes">
+            <div className="circuit-editor__lanes" ref={lanesRef}>
               {Array.from({ length: qubits }).map((_, qubitIndex) => (
                 <div key={qubitIndex} className="circuit-editor__lane">
                   <div className="circuit-editor__lane-line" />
@@ -538,6 +672,7 @@ export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
                     onDragOver={(e) => handleDragOver(e, qubitIndex)}
                     onDragLeave={handleDragLeave}
                     onDrop={(e) => handleDrop(e, qubitIndex)}
+                    onClick={(e) => handleWireTap(e.clientX, qubitIndex)}
                   />
                 </div>
               ))}
@@ -599,6 +734,18 @@ export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
                     </span>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Pending tap-to-place controls (control dot(s) + hint line) */}
+            {armedGateType && pendingTouch && (
+              <div className="circuit-editor__preview">
+                <ControlledGateShape
+                  type={armedGateType}
+                  controls={pendingTouch.controls}
+                  left={columnCenterXs[pendingTouch.column]}
+                  className="circuit-editor__controlled circuit-editor__controlled--preview circuit-editor__controlled--pending"
+                />
               </div>
             )}
 
@@ -713,20 +860,44 @@ export function CircuitEditor({ className = '' }: CircuitEditorProps = {}) {
   );
 }
 
+// Internal helpers
+
+/** A brand new gate for `roles`, with the default angle for rotation gates. */
+function buildGate(gateType: GateType, position: number, roles: GateRoles): Gate {
+  return {
+    id: generateGateId(),
+    type: gateType,
+    position,
+    ...roles,
+    ...(ROTATION_GATE_TYPES.includes(gateType) ? { parameter: DEFAULT_ROTATION_PARAMETER } : {}),
+  };
+}
+
+/** Instruction shown while a palette gate is armed for tap-to-place. */
+function touchHint(
+  gateType: GateType,
+  pending: PendingTouchPlacement | null,
+  requiredControls: number
+): string {
+  if (!pending) return `Tap a wire to place ${gateType}`;
+  if (pending.controls.length < requiredControls) return 'Tap the second control wire';
+  return 'Tap the target wire';
+}
+
 // Internal sub-components
 
 interface ControlledGateShapeProps {
   type: GateType;
   /** Control qubit rows (one, or two for CCX) */
   controls: number[];
-  /** Target qubit row */
-  target: number;
+  /** Target qubit row; omitted while a tap-to-place target is still pending */
+  target?: number;
   /** Column centre X in px */
   left: number;
   /** Accent colour; omitted for the drag preview so the grey styling applies */
   color?: string;
   className: string;
-  onClick?: () => void;
+  onClick?: (event: React.MouseEvent) => void;
 }
 
 /**
@@ -735,6 +906,9 @@ interface ControlledGateShapeProps {
  * CNOT/CCX, a small coloured box with the base letter for CY/CZ/CH/CS/CT.
  * Every element is positioned by absolute qubit row, so controls may sit
  * between or below the target.
+ *
+ * With no `target` (a tap-to-place gate that still needs one) only the control
+ * dots are drawn, and the line gets a short stub so it stays visible.
  */
 function ControlledGateShape({
   type,
@@ -745,9 +919,10 @@ function ControlledGateShape({
   className,
   onClick,
 }: ControlledGateShapeProps) {
-  const involved = [...controls, target];
+  const involved = target !== undefined ? [...controls, target] : controls;
   const minQubit = Math.min(...involved);
   const maxQubit = Math.max(...involved);
+  const spanHeight = (maxQubit - minQubit) * QUBIT_HEIGHT;
   const rowTop = (qubit: number) => `${(qubit - minQubit) * QUBIT_HEIGHT}px`;
   const targetLabel = CONTROLLED_TARGET_LABELS[type];
 
@@ -757,7 +932,7 @@ function ControlledGateShape({
       style={{
         left: `${left}px`,
         top: `${minQubit * QUBIT_HEIGHT + QUBIT_HEIGHT / 2}px`,
-        height: `${(maxQubit - minQubit) * QUBIT_HEIGHT}px`,
+        height: `${target !== undefined ? spanHeight : spanHeight + PENDING_HINT_STUB}px`,
       }}
       onClick={onClick}
     >
@@ -772,16 +947,17 @@ function ControlledGateShape({
           style={{ top: rowTop(control), ...(color ? { background: color } : {}) }}
         />
       ))}
-      {targetLabel ? (
-        <div
-          className="circuit-editor__controlled-box"
-          style={{ top: rowTop(target), ...(color ? { backgroundColor: color } : {}) }}
-        >
-          <span className="circuit-editor__controlled-box-label">{targetLabel}</span>
-        </div>
-      ) : (
-        <div className="circuit-editor__controlled-target" style={{ top: rowTop(target) }} />
-      )}
+      {target !== undefined &&
+        (targetLabel ? (
+          <div
+            className="circuit-editor__controlled-box"
+            style={{ top: rowTop(target), ...(color ? { backgroundColor: color } : {}) }}
+          >
+            <span className="circuit-editor__controlled-box-label">{targetLabel}</span>
+          </div>
+        ) : (
+          <div className="circuit-editor__controlled-target" style={{ top: rowTop(target) }} />
+        ))}
     </div>
   );
 }
