@@ -2,9 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `entangible` (fork integration branch) added so the stacked feature
+    # branches get validated on upstream's Node matrix before PRs are opened.
+    branches: [main, entangible]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   ci:
