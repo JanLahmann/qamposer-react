@@ -353,3 +353,21 @@ export function probabilities(state: StateVector): Float64Array {
   }
   return probs;
 }
+
+/**
+ * Expectation value <Z_q> of Pauli Z on one qubit: P(bit q = 0) - P(bit q = 1).
+ * Qubit q is bit q of the basis-state index (the Qiskit convention above).
+ */
+export function expectationZ(state: StateVector, qubit: number): number {
+  const dim = state.re.length;
+  if (!Number.isInteger(qubit) || qubit < 0 || 1 << qubit >= dim) {
+    throw new Error(`Qubit ${qubit} out of range for a ${dim}-amplitude state`);
+  }
+  const bit = 1 << qubit;
+  let value = 0;
+  for (let i = 0; i < dim; i++) {
+    const p = state.re[i] * state.re[i] + state.im[i] * state.im[i];
+    value += i & bit ? -p : p;
+  }
+  return value;
+}

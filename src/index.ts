@@ -64,6 +64,12 @@ export type { QiskitAdapterConfig } from './adapters/types';
 export type { LocalAdapterConfig } from './adapters/local';
 
 // =============================================================================
+// SIMULATION - Ideal state-vector simulation (zero dependencies)
+// =============================================================================
+export { simulateStatevector, probabilities, expectationZ } from './simulation';
+export type { StateVector, SimulationGate } from './simulation';
+
+// =============================================================================
 // TYPES - Core type definitions
 // =============================================================================
 export type {

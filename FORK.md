@@ -5,7 +5,8 @@ This is a fork of [QAMP-62/qamposer-react](https://github.com/QAMP-62/qamposer-r
 ## The `entangible` branch
 
 `entangible` is the **integration branch** consumed by the
-[Entangible](https://github.com/JanLahmann/entangible) project as an npm git
+[Entangible](https://github.com/JanLahmann/entangible) project (and the browser-only
+[traQmania](https://github.com/JanLahmann/traQmania) variant) as an npm git
 dependency. It tracks upstream `main` and layers on the small features Entangible
 needs ahead of an upstream release.
 
@@ -38,6 +39,12 @@ branch simply carries them until they land upstream.
   to arm, tap a wire to place; controlled gates collect control→target taps
   (CCX: three), with a pending indicator + hint line. Plus 44px coarse-pointer
   touch targets for tiles and the gate toolbar. Drag unchanged.
+- **`feat/export-simulation`** — exports the ideal state-vector simulator
+  (`simulateStatevector`, `probabilities`) from the package root and adds
+  `expectationZ(state, qubit)`, so apps can read exact amplitudes and `<Z>`
+  values instead of the sampled counts `localAdapter` returns. Used by the
+  browser-only [traQmania](https://github.com/JanLahmann/traQmania) variant,
+  whose quantum driver needs exact `<Z_a>` readouts for every decision.
 
 When an upstream release includes these, the corresponding merges can be dropped
 and `entangible` re-based onto the new upstream `main`.
