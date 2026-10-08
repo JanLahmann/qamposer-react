@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   simulateStatevector,
   probabilities,
+  expectationZ,
   sampleCounts,
   computeQspherePoints,
   DEFAULT_ROTATION_ANGLE,
@@ -90,6 +91,33 @@ describe('simulateStatevector', () => {
     expect(() =>
       simulateStatevector(2, [{ type: 'CNOT', control: 0, target: 2, position: 0 }])
     ).toThrow('out of range');
+  });
+});
+
+describe('expectationZ', () => {
+  it('is +1 on |0> and -1 on |1>', () => {
+    const state = simulateStatevector(2, [{ type: 'X', qubit: 1, position: 0 }]);
+    expect(expectationZ(state, 0)).toBeCloseTo(1, 12);
+    expect(expectationZ(state, 1)).toBeCloseTo(-1, 12);
+  });
+
+  it('is cos(theta) after RY(theta) on that qubit (little-endian)', () => {
+    const theta = 0.7;
+    const state = simulateStatevector(3, [{ type: 'RY', qubit: 2, parameter: theta, position: 0 }]);
+    expect(expectationZ(state, 2)).toBeCloseTo(Math.cos(theta), 12);
+    expect(expectationZ(state, 0)).toBeCloseTo(1, 12);
+  });
+
+  it('vanishes on both qubits of a Bell pair', () => {
+    const state = simulateStatevector(2, bell());
+    expect(expectationZ(state, 0)).toBeCloseTo(0, 12);
+    expect(expectationZ(state, 1)).toBeCloseTo(0, 12);
+  });
+
+  it('rejects an out-of-range qubit', () => {
+    const state = simulateStatevector(2, bell());
+    expect(() => expectationZ(state, 2)).toThrow('out of range');
+    expect(() => expectationZ(state, -1)).toThrow('out of range');
   });
 });
 
